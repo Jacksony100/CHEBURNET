@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">CHEBURNET</title>
+  <desc id="desc">Connection control for Windows. One executable, verified engine and signed updates.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080a0d"/><stop offset="0.55" stop-color="#11151b"/><stop offset="1" stop-color="#080a0d"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" x2="1"><stop stop-color="#ff4d00"/><stop offset="1" stop-color="#ffb000"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#ff7a18" stop-opacity=".28"/><stop offset="1" stop-color="#ff7a18" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity=".045"/></pattern>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/><rect width="1200" height="360" rx="24" fill="url(#grid)"/>
+  <circle cx="1040" cy="80" r="245" fill="url(#glow)"/><path d="M0 315 C260 255 430 365 720 302 S1010 225 1200 278 V360 H0Z" fill="#ff7a18" opacity=".035"/>
+  <g transform="translate(70 58)"><rect width="66" height="66" rx="18" fill="#0f1419" stroke="#ff7a18" stroke-width="2"/><circle cx="33" cy="33" r="15" fill="none" stroke="url(#orange)" stroke-width="5"/><path d="M33 10v11M33 45v11M10 33h11M45 33h11" stroke="#ff9b32" stroke-width="4" stroke-linecap="round"/><circle cx="33" cy="33" r="4" fill="#ff7a18"/></g>
+  <text x="164" y="88" fill="#9aa4af" font-family="Consolas, Menlo, monospace" font-size="15" font-weight="700" letter-spacing="3">CONNECTION CONTROL // WINDOWS</text>
+  <text x="68" y="190" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="82" font-weight="800" letter-spacing="3">CHEBUR</text><text x="430" y="190" fill="url(#orange)" font-family="Segoe UI, Arial, sans-serif" font-size="82" font-weight="800" letter-spacing="3">NET</text>
+  <rect x="70" y="216" width="548" height="3" rx="2" fill="url(#orange)"/>
+  <g font-family="Consolas, Menlo, monospace" font-size="15" font-weight="600">
+    <g transform="translate(70 252)"><rect width="146" height="42" rx="10" fill="#141a20" stroke="#2b343e"/><circle cx="20" cy="21" r="5" fill="#2ee66b"/><text x="34" y="27" fill="#d5dbe2">ONE EXE</text></g>
+    <g transform="translate(230 252)"><rect width="194" height="42" rx="10" fill="#141a20" stroke="#2b343e"/><circle cx="20" cy="21" r="5" fill="#2ee66b"/><text x="34" y="27" fill="#d5dbe2">VERIFIED ENGINE</text></g>
+    <g transform="translate(438 252)"><rect width="180" height="42" rx="10" fill="#141a20" stroke="#2b343e"/><circle cx="20" cy="21" r="5" fill="#2ee66b"/><text x="34" y="27" fill="#d5dbe2">SIGNED UPDATES</text></g>
+  </g>
+  <g transform="translate(770 88)"><rect width="348" height="200" rx="16" fill="#090c10" stroke="#2b343e"/><rect width="348" height="38" rx="16" fill="#151a20"/><path d="M0 38h348" stroke="#2b343e"/><circle cx="20" cy="19" r="5" fill="#ff5f57"/><circle cx="38" cy="19" r="5" fill="#febc2e"/><circle cx="56" cy="19" r="5" fill="#28c840"/>
+    <g font-family="Consolas, Menlo, monospace" font-size="14"><text x="22" y="74" fill="#66717d">$</text><text x="42" y="74" fill="#f5f7fa">cheburnet --status</text><text x="22" y="108" fill="#2ee66b">● ENGINE</text><text x="124" y="108" fill="#c5ccd4">Flowseal 1.10.1</text><text x="22" y="138" fill="#2ee66b">● STRATEGY</text><text x="124" y="138" fill="#c5ccd4">dynamic / general</text><text x="22" y="168" fill="#2ee66b">● UPDATE</text><text x="124" y="168" fill="#c5ccd4">signature verified</text></g>
+    <rect x="22" y="184" width="304" height="2" rx="1" fill="#1d252d"/><rect x="22" y="184" width="262" height="2" rx="1" fill="url(#orange)"/>
+  </g>
+  <rect x=".75" y=".75" width="1198.5" height="358.5" rx="23.25" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="1.5"/>
+</svg>

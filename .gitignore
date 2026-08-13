@@ -1,0 +1,20 @@
+# Build output
+/build*/
+/dist/
+/artifacts/
+*.obj
+*.pdb
+*.ilk
+*.exe
+!/resources/payload/bin/winws.exe
+*.res
+*.cbpkg
+*.dpapi
+
+# Generated (reproduced at configure time by cmake/gen_*.ps1)
+/resources/generated/
+
+# Editor / OS
+.vs/
+*.user
+Thumbs.db

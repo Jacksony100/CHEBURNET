@@ -1,0 +1,57 @@
+name: Сообщить об ошибке
+description: Воспроизводимая проблема в CHEBURNET
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Для уязвимостей используйте приватный канал из SECURITY.md, а не публичный issue.
+  - type: input
+    id: version
+    attributes:
+      label: Версия CHEBURNET
+      placeholder: v1.0.0-rc.1
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Версия Windows
+      options:
+        - Windows 11 x64
+        - Windows 10 x64
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Что произошло
+      description: Опишите ожидаемое и фактическое поведение.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      placeholder: |
+        1. Запустить…
+        2. Выбрать…
+        3. Получить…
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Диагностика
+      description: Приложите безопасный фрагмент журнала без персональных данных, токенов и приватных путей.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Проверки
+      options:
+        - label: Я скачал EXE из официального GitHub Release и проверил SHA-256.
+          required: true
+        - label: Это не отчёт об уязвимости.
+          required: true

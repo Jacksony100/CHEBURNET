@@ -1,0 +1,10 @@
+changelog:
+  categories:
+    - title: Безопасность
+      labels: [security]
+    - title: Новые возможности
+      labels: [enhancement]
+    - title: Исправления
+      labels: [bug]
+    - title: Прочие изменения
+      labels: ['*']

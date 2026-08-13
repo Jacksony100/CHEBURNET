@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Configure and build Release (/W4 /WX)
+        shell: powershell
+        run: scripts\build-release.ps1 -BuildDir build-ci
+      - name: Unit, security and dynamic fidelity tests
+        shell: powershell
+        run: scripts\run-tests.ps1 -BuildDir build-ci
+      - name: Upstream provenance/current check
+        shell: powershell
+        run: |
+          $version = [string](Get-Content resources\upstream\provenance.json -Raw | ConvertFrom-Json).version
+          scripts\sync-upstream.ps1 -Version $version -CheckOnly
+      - name: License validation
+        shell: powershell
+        run: scripts\validate-licenses.ps1
+      - name: Package dry run and negative path tests
+        shell: powershell
+        run: |
+          scripts\package.ps1 -BuildDir build-ci -OutDir artifacts\dist-test -SkipBuild
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\package_safety.ps1 -RepositoryRoot $PWD
+      - name: Upload unsigned CI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: CHEBURNET-ci
+          path: artifacts/dist-test/

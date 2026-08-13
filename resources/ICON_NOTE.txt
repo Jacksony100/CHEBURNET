@@ -1,0 +1,8 @@
+app.ico — финальный знак CHEBURNET.
+
+Иконка сочетает узнаваемый зелёный силуэт с оранжевым connection-node из
+публичной айдентики проекта. Она генерируется воспроизводимо скриптом
+cmake/gen_icon.ps1 и содержит PNG-слои 16, 24, 32, 48, 64, 128 и 256 px.
+
+Перегенерация:
+  powershell -NoProfile -ExecutionPolicy Bypass -File cmake\gen_icon.ps1 -Out resources\app.ico

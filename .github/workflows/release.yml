@@ -1,0 +1,85 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify immutable upstream import
+        shell: powershell
+        run: |
+          $payloadVersion = [string](Get-Content resources\upstream\provenance.json -Raw | ConvertFrom-Json).version
+          scripts\sync-upstream.ps1 -Version $payloadVersion -CheckOnly
+      - name: Clean build and verification
+        shell: powershell
+        run: |
+          scripts\build-release.ps1 -BuildDir build-release
+          scripts\run-tests.ps1 -BuildDir build-release
+          scripts\validate-licenses.ps1
+      - name: Optional Authenticode sign and verify
+        shell: powershell
+        env:
+          AUTHENTICODE_PFX_B64: ${{ secrets.AUTHENTICODE_PFX_B64 }}
+          AUTHENTICODE_PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AUTHENTICODE_PFX_B64)) {
+            Write-Warning 'AUTHENTICODE certificate not configured: publishing explicitly unsigned artifact.'
+          } else {
+            $pfx = Join-Path $env:RUNNER_TEMP 'release.pfx'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:AUTHENTICODE_PFX_B64))
+            $signtool = (Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+              Sort-Object FullName -Descending | Select-Object -First 1).FullName
+            & $signtool sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:AUTHENTICODE_PFX_PASSWORD build-release\CHEBURNET.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed' }
+            & $signtool verify /pa /all /v build-release\CHEBURNET.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification failed' }
+            Remove-Item -LiteralPath $pfx -Force
+          }
+      - name: Assemble release and signed update metadata
+        shell: powershell
+        env:
+          CHEBURNET_SIGNING_KEY_CNG_BLOB_B64: ${{ secrets.CHEBURNET_SIGNING_KEY_CNG_BLOB_B64 }}
+        run: |
+          $tagVersion = '${{ github.ref_name }}'.TrimStart('v')
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(CHEBURNET VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
+            throw 'Cannot determine CHEBURNET source version'
+          }
+          $sourceVersion = $Matches[1]
+          $escapedSourceVersion = [regex]::Escape($sourceVersion)
+          if (($tagVersion -cne $sourceVersion) -and ($tagVersion -notmatch "^$escapedSourceVersion-rc\.[1-9][0-9]*$")) {
+            throw "Release tag version $tagVersion does not match source/binary version $sourceVersion"
+          }
+          $payloadVersion = [string](Get-Content resources\upstream\provenance.json -Raw | ConvertFrom-Json).version
+          if ($payloadVersion -notmatch '^[0-9]+(?:\.[0-9]+){1,7}[A-Za-z0-9+.-]*$') { throw 'Invalid payload version in provenance' }
+          $payload = "dist\cheburnet-payload-$payloadVersion.cbpkg"
+          scripts\package.ps1 -BuildDir build-release -OutDir dist -SkipBuild
+          scripts\build-update-package.ps1 -OutFile $payload
+          scripts\generate-update-manifest.ps1 -Launcher dist\CHEBURNET.exe -Payload $payload -LauncherVersion $sourceVersion -BaseUrl "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}" -OutFile dist\update-manifest.json
+          scripts\sign-update-manifest.ps1 -Manifest dist\update-manifest.json -SignatureOut dist\update-manifest.json.sig
+          $payloadName = Split-Path -Leaf $payload
+          Get-FileHash $payload -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $payloadName" } | Set-Content -Encoding ascii "$payload.sha256"
+          Copy-Item DEPENDENCIES.md dist\DEPENDENCIES.md
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          fail_on_unmatched_files: true
+          name: CHEBURNET ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
+          generate_release_notes: true
+          files: |
+            dist/CHEBURNET.exe
+            dist/CHEBURNET.exe.sha256
+            dist/cheburnet-payload-*.cbpkg
+            dist/cheburnet-payload-*.cbpkg.sha256
+            dist/update-manifest.json
+            dist/update-manifest.json.sig
+            dist/THIRD_PARTY_NOTICES.md
+            dist/DEPENDENCIES.md
+            dist/LICENSES/*
