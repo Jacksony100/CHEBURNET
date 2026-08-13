@@ -17,9 +17,9 @@ class RuntimePaths;
 namespace cheburnet::update {
 
 inline constexpr wchar_t kDefaultManifestUrl[] =
-    L"https://github.com/Jacksony100/CHEBURNET/releases/download/v1.0.0-rc.2/update-manifest.json";
+    L"https://github.com/Jacksony100/CHEBURNET/releases/latest/download/update-manifest.json";
 inline constexpr wchar_t kDefaultSignatureUrl[] =
-    L"https://github.com/Jacksony100/CHEBURNET/releases/download/v1.0.0-rc.2/update-manifest.json.sig";
+    L"https://github.com/Jacksony100/CHEBURNET/releases/latest/download/update-manifest.json.sig";
 
 enum class CheckStatus { Current, Available, Offline, Disabled, Rejected, NotModified };
 

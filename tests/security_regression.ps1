@@ -49,6 +49,7 @@ $input = Read-Source 'src\ui\Input.cpp'
 $config = Read-Source 'src\config\Config.cpp'
 $json = Read-Source 'src\util\Json.cpp'
 $manager = Read-Source 'src\update\UpdateManager.cpp'
+$managerHeader = Read-Source 'src\update\UpdateManager.h'
 $http = Read-Source 'src\update\WinHttpClient.cpp'
 $packageCpp = Read-Source 'src\update\UpdatePackage.cpp'
 $strategyGen = Read-Source 'cmake\gen_strategies.ps1'
@@ -121,6 +122,10 @@ Require-Match 'UPDATE/connect/cleanup enforce atomic transitions' ($app + $scree
     'TryTransition[\s\S]*AppOperationState::Disconnecting[\s\S]*AppOperationState::Updating'
 Require-Match 'UPDATE HTTPS-only redirects' $http `
     'WINHTTP_OPTION_REDIRECT_POLICY_NEVER[\s\S]*IsAllowedRedirect'
+Require-Match 'UPDATE stable channel follows only the latest stable GitHub release' $managerHeader `
+    'https://github\.com/Jacksony100/CHEBURNET/releases/latest/download/update-manifest\.json[\s\S]*releases/latest/download/update-manifest\.json\.sig'
+Reject-Match 'UPDATE production endpoint is never pinned to a release candidate' $managerHeader `
+    'releases/download/v[^"\s]*-rc\.'
 Require-Match 'UPDATE exact download size and hash' ($http + $packageCpp) `
     'expectedSize[\s\S]*expectedSha256[\s\S]*AtomicWriteStream'
 Require-Match 'UPDATE package path allowlist' $packageCpp `
