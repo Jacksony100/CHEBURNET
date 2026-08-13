@@ -30,6 +30,7 @@ jobs:
       - name: Пробная упаковка и негативные тесты путей
         shell: powershell
         run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\authenticode-sign.ps1 -File build-ci\CHEBURNET.exe
           scripts\package.ps1 -BuildDir build-ci -OutDir artifacts\dist-test -SkipBuild
           powershell -NoProfile -ExecutionPolicy Bypass -File tests\package_safety.ps1 -RepositoryRoot $PWD
       - name: Загрузка неподписанного CI-артефакта

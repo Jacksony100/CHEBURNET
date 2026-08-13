@@ -29,21 +29,7 @@ jobs:
         env:
           AUTHENTICODE_PFX_B64: ${{ secrets.AUTHENTICODE_PFX_B64 }}
           AUTHENTICODE_PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:AUTHENTICODE_PFX_B64)) {
-            Write-Warning 'Сертификат Authenticode не настроен: артефакт будет явно опубликован без подписи.'
-          } else {
-            $pfx = Join-Path $env:RUNNER_TEMP 'release.pfx'
-            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:AUTHENTICODE_PFX_B64))
-            $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
-              Sort-Object FullName -Descending | Select-Object -First 1).FullName
-            if ([string]::IsNullOrWhiteSpace($signtool)) { throw 'Не найден signtool.exe' }
-            & $signtool sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:AUTHENTICODE_PFX_PASSWORD build-release\CHEBURNET.exe
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось подписать файл Authenticode' }
-            & $signtool verify /pa /all /v build-release\CHEBURNET.exe
-            if ($LASTEXITCODE -ne 0) { throw 'Проверка Authenticode завершилась ошибкой' }
-            Remove-Item -LiteralPath $pfx -Force
-          }
+        run: scripts\authenticode-sign.ps1 -File build-release\CHEBURNET.exe
       - name: Сборка релиза и подписанных метаданных обновления
         shell: powershell
         env:
