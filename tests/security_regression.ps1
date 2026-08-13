@@ -57,6 +57,8 @@ $upstreamVerify = Read-Source 'scripts\verify-upstream.ps1'
 $releaseManifest = Read-Source 'scripts\generate-update-manifest.ps1'
 $packageBuilder = Read-Source 'scripts\build-update-package.ps1'
 $manifestSigner = Read-Source 'scripts\sign-update-manifest.ps1'
+$manifestVerifier = Read-Source 'scripts\verify-update-manifest-signature.ps1'
+$releasePreparation = Read-Source 'scripts\prepare-release.ps1'
 
 Require-Match 'P1-01 strict descendant package cleanup' ($package + $packagePath) `
     'Assert-SafePackageOutDir[\s\S]*strict descendant'
@@ -135,6 +137,8 @@ Require-Match 'RELEASE package builder re-hashes final serialized entries' $pack
     'Re-open the final object[\s\S]*TransformFinalBlock[\s\S]*final package entry SHA-256 mismatch'
 Require-Match 'RELEASE signing key must match embedded trust key' $manifestSigner `
     'manifest key_id does not match[\s\S]*EccPublicBlob[\s\S]*private signing key does not match the embedded public key[\s\S]*VerifyData'
+Require-Match 'RELEASE independently verifies signed manifest before publish' ($releasePreparation + $manifestVerifier) `
+    'sign-update-manifest\.ps1[\s\S]*verify-update-manifest-signature\.ps1[\s\S]*EccPublicBlob[\s\S]*VerifyData'
 Require-Match 'LAUNCHER DLL search hardening is fail-closed' $main `
     'if \(!::SetDefaultDllDirectories\(LOAD_LIBRARY_SEARCH_SYSTEM32\)\)[\s\S]*return 6;'
 Require-Match 'LAUNCHER instance mutex has protected admin/system security' $main `

@@ -34,27 +34,7 @@ jobs:
         shell: powershell
         env:
           CHEBURNET_SIGNING_KEY_CNG_BLOB_B64: ${{ secrets.CHEBURNET_SIGNING_KEY_CNG_BLOB_B64 }}
-        run: |
-          $tagVersion = '${{ github.ref_name }}'.TrimStart('v')
-          $cmake = Get-Content CMakeLists.txt -Raw
-          if ($cmake -notmatch 'project\(CHEBURNET VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
-            throw 'Не удалось определить версию CHEBURNET в исходниках'
-          }
-          $sourceVersion = $Matches[1]
-          $escapedSourceVersion = [regex]::Escape($sourceVersion)
-          if (($tagVersion -cne $sourceVersion) -and ($tagVersion -notmatch "^$escapedSourceVersion-rc\.[1-9][0-9]*$")) {
-            throw "Версия тега $tagVersion не соответствует версии исходников/бинарника $sourceVersion"
-          }
-          $payloadVersion = [string](Get-Content resources\upstream\provenance.json -Raw | ConvertFrom-Json).version
-          if ($payloadVersion -notmatch '^[0-9]+(?:\.[0-9]+){1,7}[A-Za-z0-9+.-]*$') { throw 'Недопустимая версия пакета в данных происхождения' }
-          $payload = "dist\cheburnet-payload-$payloadVersion.cbpkg"
-          scripts\package.ps1 -BuildDir build-release -OutDir dist -SkipBuild
-          scripts\build-update-package.ps1 -OutFile $payload
-          scripts\generate-update-manifest.ps1 -Launcher dist\CHEBURNET.exe -Payload $payload -LauncherVersion $sourceVersion -BaseUrl "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}" -OutFile dist\update-manifest.json
-          scripts\sign-update-manifest.ps1 -Manifest dist\update-manifest.json -SignatureOut dist\update-manifest.json.sig
-          $payloadName = Split-Path -Leaf $payload
-          Get-FileHash $payload -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $payloadName" } | Set-Content -Encoding ascii "$payload.sha256"
-          Copy-Item DEPENDENCIES.md dist\DEPENDENCIES.md
+        run: scripts\prepare-release.ps1 -Tag '${{ github.ref_name }}' -Repository '${{ github.repository }}' -BuildDir build-release -OutDir dist
       - name: Публикация релиза GitHub
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
