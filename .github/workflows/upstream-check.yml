@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Проверка последнего неизменяемого стабильного релиза
         shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: scripts\sync-upstream.ps1 -CheckOnly
       - name: Политика обновления
         shell: powershell

@@ -14,6 +14,10 @@ $headers = @{
     'Accept' = 'application/vnd.github+json'
     'X-GitHub-Api-Version' = '2022-11-28'
 }
+$githubToken = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN')
+if (-not [string]::IsNullOrWhiteSpace($githubToken)) {
+    $headers['Authorization'] = "Bearer $githubToken"
+}
 $api = if ([string]::IsNullOrWhiteSpace($Version)) {
     'https://api.github.com/repos/Flowseal/zapret-discord-youtube/releases/latest'
 } else {

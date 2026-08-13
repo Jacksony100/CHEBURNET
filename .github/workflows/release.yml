@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Проверка неизменяемого импорта исходного выпуска
         shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $payloadVersion = [string](Get-Content resources\upstream\provenance.json -Raw | ConvertFrom-Json).version
           scripts\sync-upstream.ps1 -Version $payloadVersion -CheckOnly
