@@ -13,6 +13,10 @@ $payloadPath = [IO.Path]::GetFullPath($Payload)
 $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($launcherPath)
 $version = ([string]$versionInfo.ProductVersion) -replace '\.0$', ''
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'test launcher has no canonical PE version' }
+$expectedDescription = [regex]::Unescape('CHEBURNET \u2014 \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435\u043c')
+if ([string]$versionInfo.FileDescription -cne $expectedDescription) {
+    throw 'launcher PE description is not correctly encoded Russian text'
+}
 
 $testRoot = Join-Path (Split-Path -Parent $launcherPath) ('release-metadata-' + [guid]::NewGuid().ToString('N'))
 $manifest = Join-Path $testRoot 'update-manifest.json'

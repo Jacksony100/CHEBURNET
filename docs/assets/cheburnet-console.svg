@@ -5,17 +5,17 @@
     .t{font:22px Consolas,monospace;fill:#9aeec8}.b{font:bold 27px Consolas,monospace;fill:#48ffad}
     .d{font:19px Consolas,monospace;fill:#64a98b}.a{font:21px Consolas,monospace;fill:#ffd166}
   </style>
-  <text x="52" y="70" class="b">CHEBURNET // COMMAND CENTER</text>
+  <text x="52" y="70" class="b">CHEBURNET // КОМАНДНЫЙ ЦЕНТР</text>
   <text x="52" y="110" class="d">──────────────────────────────────────────────────────────────────────────────</text>
-  <text x="52" y="155" class="t">STATUS      CONNECTED</text>
-  <text x="52" y="190" class="t">ENGINE      Flowseal 1.10.1</text>
-  <text x="52" y="225" class="t">STRATEGY    general</text>
-  <text x="52" y="260" class="t">GAMEFILTER  OFF</text>
-  <text x="52" y="310" class="a">[1] Reconnect              [5] Check updates</text>
-  <text x="52" y="348" class="t">[2] Disconnect             [6] Diagnostics</text>
-  <text x="52" y="386" class="t">[3] Select strategy         [7] Event log</text>
-  <text x="52" y="424" class="t">[4] Game Filter             [8] Settings</text>
-  <text x="52" y="480" class="d">[AUTH] ECDSA P-256 manifest ........ VERIFIED</text>
-  <text x="52" y="515" class="d">[CORE] Known-good runtime ........... OK</text>
-  <text x="52" y="555" class="b">CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100</text>
+  <text x="52" y="155" class="t">СОСТОЯНИЕ   ПОДКЛЮЧЕНО</text>
+  <text x="52" y="190" class="t">ДВИЖОК      Flowseal 1.10.1</text>
+  <text x="52" y="225" class="t">СТРАТЕГИЯ   general</text>
+  <text x="52" y="260" class="t">GAMEFILTER  ВЫКЛЮЧЕН</text>
+  <text x="52" y="310" class="a">[1] Переподключиться       [5] Проверить обновления</text>
+  <text x="52" y="348" class="t">[2] Отключиться            [6] Диагностика</text>
+  <text x="52" y="386" class="t">[3] Выбрать стратегию       [7] Журнал событий</text>
+  <text x="52" y="424" class="t">[4] Игровой фильтр          [8] Настройки</text>
+  <text x="52" y="480" class="d">[ПОДПИСЬ] Manifest ECDSA P-256 ...... ПРОВЕРЕН</text>
+  <text x="52" y="515" class="d">[ЯДРО] Рабочая версия среды ......... ГОТОВА</text>
+  <text x="52" y="555" class="b">CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100</text>
 </svg>

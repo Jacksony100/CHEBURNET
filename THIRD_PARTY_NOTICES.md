@@ -1,35 +1,40 @@
-# Third-party notices
+# Уведомления о сторонних компонентах
 
-CHEBURNET is an independent launcher. Jacksony100 and CHEBURNET contributors
-do not claim authorship of the upstream network engine or its dependencies.
+CHEBURNET — независимая программа запуска. Jacksony100 и участники CHEBURNET
+не заявляют авторство сетевого движка или его зависимостей.
 
 ## Flowseal/zapret-discord-youtube
 
-Release bundle and strategies by Flowseal contributors. Licensed under MIT.
-See `LICENSES/Flowseal-MIT.txt`. The exact embedded immutable release, URL,
-commit and archive SHA-256 are recorded in `resources/upstream/provenance.json`
-and embedded into the executable's diagnostics/About data.
+Релизный пакет и стратегии подготовлены участниками Flowseal и распространяются
+по лицензии MIT. См. `LICENSES/Flowseal-MIT.txt`. Точные идентификатор релиза,
+фиксация, URL и SHA-256 неизменяемого архива записаны в
+`resources/upstream/provenance.json` и встроены в диагностику/экран «О
+программе».
 
 ## bol-van/zapret / winws
 
-Original DPI desynchronization engine by bol-van and contributors. The current
-upstream project declares MIT licensing. See `LICENSES/zapret-MIT.txt` and
-https://github.com/bol-van/zapret.
+Исходный движок десинхронизации DPI создан bol-van и участниками проекта.
+Текущий исходный проект заявляет лицензию MIT. См.
+`LICENSES/zapret-MIT.txt` и [репозиторий bol-van/zapret](https://github.com/bol-van/zapret).
 
 ## WinDivert 2.2
 
-Copyright (c) Basil and WinDivert contributors. WinDivert is dual-licensed
-under LGPL-3.0-or-later or GPL-2.0. CHEBURNET distributes the unmodified DLL
-and driver under the LGPL option. See `LICENSES/LGPL-3.0.txt`; GPL-2.0 is also
-provided in `LICENSES/GPL-2.0.txt`. Official project/source:
-https://reqrypt.org/windivert.html
+Copyright © Basil и участники WinDivert. WinDivert имеет двойную лицензию:
+LGPL-3.0-or-later или GPL-2.0. CHEBURNET распространяет неизменённые DLL и
+драйвер на условиях LGPL. См. `LICENSES/LGPL-3.0.txt`; текст GPL-2.0 также
+приложен в `LICENSES/GPL-2.0.txt`. Официальный проект и исходный код:
+[reqrypt.org/windivert.html](https://reqrypt.org/windivert.html).
 
-## Cygwin API library 3.4.10 (`cygwin1.dll`)
+## Библиотека Cygwin API 3.4.10 (`cygwin1.dll`)
 
-Copyright (c) Cygwin authors. The Cygwin API library is LGPL-3.0-or-later with
-the Cygwin linking exception described at https://cygwin.com/licensing.html.
-See `LICENSES/LGPL-3.0.txt`. Corresponding source is available from the Cygwin
-project archives: https://cygwin.com/packages/summary/cygwin-src.html.
+Copyright © авторы Cygwin. Библиотека Cygwin API распространяется по
+LGPL-3.0-or-later с исключением для связывания Cygwin, описанным на
+[cygwin.com/licensing.html](https://cygwin.com/licensing.html). См.
+`LICENSES/LGPL-3.0.txt`. Соответствующие исходники доступны в
+[архиве пакетов Cygwin](https://cygwin.com/packages/summary/cygwin-src.html).
 
-These notices and texts must ship with every public release. The runtime About
-screen points users to this file and the repository license directory.
+Эти уведомления и тексты лицензий должны входить в каждый публичный релиз.
+Экран «О программе» направляет пользователя к этому файлу и каталогу лицензий.
+
+> Оригинальные юридические тексты в `LICENSE` и `LICENSES/` намеренно не
+> переводятся: перевод не заменяет условия исходных лицензий.

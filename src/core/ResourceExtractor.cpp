@@ -212,7 +212,7 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
             const auto hardened = securefs::HardenObject(target, securefs::ObjectKind::File);
             if (!hardened.ok) {
                 result.failedResource = logical;
-                result.error = L"Не удалось защитить runtime-файл (ACL): " + logical;
+                result.error = L"Не удалось защитить файл рабочей среды (ACL): " + logical;
                 return result;
             }
             ++result.present;
@@ -224,14 +224,14 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
         if (!buf.ok || buf.size != r.expectedSize) {
             result.failedResource = logical;
             result.error = L"Встроенный ресурс повреждён или отсутствует: " + logical;
-            Logger::Error(L"embedded resource load failed: " + logical);
+            Logger::Error(L"не удалось загрузить встроенный ресурс: " + logical);
             return result;
         }
         auto sha = IntegrityVerifier::Sha256Hex(buf.data, buf.size);
         if (!sha || !IntegrityVerifier::HexEquals(*sha, r.sha256)) {
             result.failedResource = logical;
             result.error = L"Контрольная сумма встроенного ресурса не совпала: " + logical;
-            Logger::Error(L"embedded resource SHA-256 mismatch: " + logical);
+            Logger::Error(L"SHA-256 встроенного ресурса не совпадает: " + logical);
             return result;
         }
 
@@ -241,7 +241,7 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
             result.error = L"Не удалось распаковать ресурс: " + logical + L"\nПричина: " +
                            win32::FormatLastError() +
                            L"\n(файл может быть занят работающим процессом)";
-            Logger::Error(L"write failed for resource: " + logical);
+            Logger::Error(L"не удалось записать ресурс: " + logical);
             return result;
         }
 
@@ -249,7 +249,7 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
         if (!FileIsValid(target, r.expectedSize, r.sha256)) {
             result.failedResource = logical;
             result.error = L"Распакованный файл не прошёл проверку целостности: " + logical;
-            Logger::Error(L"post-write verification failed: " + logical);
+            Logger::Error(L"проверка ресурса после записи не пройдена: " + logical);
             return result;
         }
 
@@ -261,7 +261,7 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
         }
 
         ++result.extracted;
-        Logger::Info(L"extracted resource: " + logical);
+        Logger::Info(L"извлечён ресурс: " + logical);
     }
 
     const std::wstring strategyDir = paths_.RuntimeVersionDir() + L"\\strategies";
@@ -280,11 +280,11 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
         initial.current = str::ToUtf8(upstream::kVersion);
         initial.lastResult = "embedded-runtime-ready";
         if (!update::SaveRuntimeState(paths_.ActiveRuntimePath(), initial)) {
-            result.error = L"Не удалось инициализировать active-runtime state.";
+            result.error = L"Не удалось инициализировать состояние активной среды.";
             return result;
         }
     } else if (!state.ok) {
-        result.error = L"Защищённое состояние runtime повреждено; запуск отклонён.";
+        result.error = L"Защищённое состояние рабочей среды повреждено; запуск отклонён.";
         return result;
     }
 
@@ -301,14 +301,14 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         if (!securefs::HardenObject(directory, securefs::ObjectKind::Directory).ok ||
             !securefs::ValidateProtectedObject(
                 directory, securefs::ObjectKind::Directory, false).ok) {
-            result.error = L"ACL каталога установленного runtime не прошёл проверку.";
+            result.error = L"ACL каталога установленной рабочей среды не прошёл проверку.";
             return result;
         }
     }
     const std::wstring manifestPath = paths_.RuntimeVersionDir() + L"\\runtime-manifest.json";
     std::string bytes;
     if (!ReadSmallProtectedFile(manifestPath, 1024u * 1024u, bytes)) {
-        result.error = L"Не удалось прочитать защищённый manifest установленного runtime.";
+        result.error = L"Не удалось прочитать защищённый манифест установленной рабочей среды.";
         return result;
     }
     json::ParseOptions options;
@@ -324,7 +324,7 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
     if (!root || root->size() != 3 || !schema || *schema != 1 || !version ||
         str::ToUtf16(*version) != paths_.RuntimeVersion() || !files || files->empty() ||
         files->size() > 256) {
-        result.error = L"Manifest установленного runtime имеет неверную схему/версию.";
+        result.error = L"Манифест установленной рабочей среды имеет неверную схему или версию.";
         return result;
     }
     bool winws = false;
@@ -340,19 +340,19 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         if (!object || object->size() != 3 || !rel || !sha || !size || *size == 0 ||
             sha->size() != 64 || *rel == "runtime-manifest.json" ||
             !SafeRuntimeRelativePath(*rel, normalized)) {
-            result.error = L"Некорректная запись в manifest установленного runtime.";
+            result.error = L"Некорректная запись в манифесте установленной рабочей среды.";
             return result;
         }
         const std::wstring folded = str::ToLowerAsciiW(normalized);
         if (!seen.insert(folded).second) {
-            result.error = L"Manifest установленного runtime содержит повтор пути.";
+            result.error = L"Манифест установленной рабочей среды содержит повтор пути.";
             return result;
         }
         const std::wstring full = paths_.RuntimeVersionDir() + L"\\" + normalized;
         if (!FileIsValid(full, *size, sha->c_str()) ||
             !securefs::HardenObject(full, securefs::ObjectKind::File).ok) {
             result.failedResource = normalized;
-            result.error = L"Проверка целостности установленного runtime не пройдена: " + normalized;
+            result.error = L"Проверка целостности установленной рабочей среды не пройдена: " + normalized;
             return result;
         }
         winws = winws || folded == L"bin\\winws.exe";
@@ -364,7 +364,7 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         !ValidateInstalledProvenance(paths_.RuntimeVersionDir() + L"\\provenance.json",
                                      paths_.RuntimeVersion()) ||
         !strategies::LoadCatalogFile(paths_.StrategyCatalogPath(), catalog, result.error)) {
-        if (result.error.empty()) result.error = L"Runtime не содержит обязательных компонентов.";
+        if (result.error.empty()) result.error = L"Рабочая среда не содержит обязательных компонентов.";
         return result;
     }
     result.ok = true;
@@ -415,9 +415,9 @@ bool ResourceExtractor::HardenRuntimeDirs() {
         }
     }
     if (allCriticalOk) {
-        Logger::Info(L"runtime directories hardened (owner + protected DACL)");
+        Logger::Info(L"каталоги рабочей среды защищены (владелец и защищённая DACL)");
     } else {
-        Logger::Error(L"failed to harden one or more critical runtime directories");
+        Logger::Error(L"не удалось защитить один или несколько критических каталогов рабочей среды");
     }
     return allCriticalOk;
 }
@@ -441,7 +441,7 @@ int ResourceExtractor::CleanupOldVersions() {
         }
         if (preserve) continue;
         const std::wstring full = paths_.RuntimeRoot() + L"\\" + name;
-        Logger::Info(L"removing old runtime version: " + name);
+        Logger::Info(L"удаляется старая версия рабочей среды: " + name);
         if (securefs::RemoveTreeUnder(paths_.RuntimeRoot(), full).ok) ++removed;
     } while (::FindNextFileW(h, &fd));
     ::FindClose(h);

@@ -94,7 +94,7 @@ Require-Match 'P1-05 rollback terminates child' $process `
 Require-Match 'P1-05 kernel job rollback guard' $process `
     'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE[\s\S]*CreateProcessW[\s\S]*SaveRecord'
 Require-Match 'P1-05 stop requires confirmed termination' $process `
-    'TerminateProcess\(h, 0\)[\s\S]*stopped != WAIT_OBJECT_0[\s\S]*process termination was not confirmed'
+    'TerminateProcess\(h, 0\)[\s\S]*stopped != WAIT_OBJECT_0[\s\S]*Logger::Error'
 Require-Match 'P1-05 redirected logs validate ACL through their live handle' $process `
     'OpenProtectedRedirect[\s\S]*READ_CONTROL[\s\S]*ValidateProtectedHandle'
 Require-Match 'P2-06 verified PID exclusion' ($process + $launcher + $screens) `
@@ -108,9 +108,9 @@ Require-Match 'P2-08 scoped strict JSON config' ($config + $json) `
 Require-Match 'UPDATE signature before trust' $manager `
     'VerifyManifestSignature[\s\S]*EvaluateLauncher[\s\S]*g_verifiedManifestCache = result'
 Require-Match 'UPDATE apply remains bound to authenticated manifest' $manager `
-    'most recently authenticated[\s\S]*g_verifiedManifestCache[\s\S]*payload is not bound to the verified manifest'
+    'most recently authenticated[\s\S]*g_verifiedManifestCache[\s\S]*SameArtifact'
 Require-Match 'UPDATE downloads remain bound to authenticated manifest' $manager `
-    'SameArtifact[\s\S]*DownloadVerified[\s\S]*artifact is not bound to the verified manifest'
+    'SameArtifact[\s\S]*DownloadVerified[\s\S]*g_verifiedManifestCache'
 Require-Match 'UPDATE interrupted pending process is identity-verified and stopped' $app `
     'pendingPaths[\s\S]*recovery\.Record\(\)[\s\S]*pendingPaths\.WinwsExePath\(\)[\s\S]*recovery\.Stop\(\)[\s\S]*interrupted-pending-rolled-back'
 Require-Match 'UPDATE/connect/cleanup declare explicit serialized states' $operationState `

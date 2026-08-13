@@ -1,66 +1,79 @@
-# Public RC smoke test
+# Ручная проверка публичного кандидата
 
-Run on clean, snapshotted Windows 10 x64 and Windows 11 x64 VMs. Use the exact
-release artifact/hash and record OS build, console host, result and log path for
-every item. Do not run destructive network tests on a development host.
+Выполняйте её на чистых виртуальных машинах Windows 10 x64 и Windows 11 x64 со
+снимками. Для каждого пункта используйте точный артефакт релиза и его SHA-256,
+фиксируйте сборку ОС, приложение терминала, результат и путь журнала. Не
+проводите разрушающие сетевые тесты на машине разработки.
 
-## Install, UI and runtime
+## Установка, интерфейс и рабочая среда
 
-1. Verify `CHEBURNET.exe.sha256`; start from a path containing Cyrillic/spaces.
-2. Reject UAC: launcher exits cleanly without creating a weak ProgramData tree.
-3. Accept UAC: protected bootstrap/logging succeeds; first embedded extraction
-   reports all hashes/ACLs valid.
-4. Check branding, mascot, Unicode and `--ascii-only`; resize/minimize; verify
-   console input/output codepages, modes, cursor, attributes and window style are
-   restored on exit.
-5. Connect with `general`; confirm 100% only after winws stabilization and pid /
-   creation time / canonical image validation. Disconnect.
-6. Select several dynamically listed strategies and test GameFilter off, all,
-   TCP and UDP. Confirm user config persists across restart.
-7. Add harmless entries to each `user\lists` overlay; restart/update and confirm
-   they remain while vendor lists are restored if modified.
-8. Exercise diagnostics, local logs and About provenance/credits. Confirm no
-   sensitive environment, full winws argv or packet data is logged.
+1. Сверьте `CHEBURNET.exe.sha256`; запустите из пути с кириллицей и пробелами.
+2. Отклоните UAC: программа должна завершиться без создания слабого дерева
+   ProgramData.
+3. Подтвердите UAC: защищённая подготовка и журнал должны успешно создаться, а
+   первая распаковка — подтвердить все SHA-256 и ACL.
+4. Проверьте оформление, талисман, Unicode и `--ascii-only`; измените размер и
+   сверните окно. После выхода должны восстановиться кодовые страницы, режимы,
+   курсор, атрибуты и стиль консоли.
+5. Подключитесь со стратегией `general`: 100% допустимы только после
+   стабилизации winws и проверки PID, времени создания и канонического образа.
+   Отключитесь.
+6. Проверьте несколько динамически перечисленных стратегий и игровой фильтр:
+   выключен, весь трафик, TCP и UDP. Настройки должны сохраниться.
+7. Добавьте безвредные строки во все `user\lists`; после перезапуска или
+   обновления они должны сохраниться, а изменённые списки поставщика —
+   восстановиться.
+8. Проверьте диагностику, локальный журнал и происхождение/авторство в разделе
+   «О программе». В журнал не должны попадать чувствительное окружение, полная
+   командная строка winws или содержимое пакетов.
 
-## Conflict and recovery
+## Конфликты и восстановление
 
-9. Leave a valid CHEBURNET winws running, restart launcher and verify ownership
-   recognition. Create a stale pid record and verify it is not exempted.
-10. Run a foreign `winws.exe` and an active zapret service separately; verify
-    CHEBURNET refuses to duplicate or terminate them.
-11. Corrupt an embedded runtime binary/list and verify exact re-extraction.
-    Preplant a junction/hardlink and verify fail-closed behavior.
-12. Reboot with a valid process record; verify safe recovery. Exercise old-runtime
-    cleanup and confirm current, previous-known-good and pending versions survive.
+9. Оставьте доверенный winws CHEBURNET работающим, перезапустите программу и
+   проверьте распознавание владельца. Устаревшая запись PID не должна давать
+   исключение.
+10. По отдельности запустите посторонний `winws.exe` и службу `zapret`:
+    CHEBURNET обязан отказаться от дублирования или завершения чужого процесса.
+11. Повредите бинарник или список встроенной среды и проверьте точную повторную
+    распаковку. Подложите точку соединения или жёсткую ссылку — ожидается
+    безопасный отказ.
+12. Перезагрузитесь с действующей записью процесса; проверьте безопасное
+    восстановление. При очистке должны сохраниться текущая, предыдущая рабочая,
+    ожидающая и встроенная версии.
 
-## Update matrix
+## Матрица обновлений
 
-13. Offline startup/manual check: show OFFLINE without blocking connection.
-14. Online current response: signature VERIFIED and current versions shown.
-15. Tamper manifest/signature, offer HTTP redirect, wrong hash/size, truncated
-    package and incompatible/downgrade/prerelease metadata: each must show
-    `UPDATE REJECTED` with no unsigned fallback or state change.
-16. Cancel a real payload download and confirm incomplete staging never activates.
-17. Apply a valid newer payload while disconnected, then connect and verify it.
-18. Apply while connected: confirm explicit approval, protected new directory,
-    stop/start/stabilization/health, committed `active-runtime.json` and preserved
-    config/user lists.
-19. Simulate candidate start and health failure; verify `[ UPDATE ROLLED BACK ]`,
-    previous engine running and state restored. Kill during pending and restart;
-    pending must not be promoted.
-20. Offer a valid launcher update: verify `CHEBURNET-new.exe` is downloaded and
-    its folder opens, while the running executable is not overwritten/executed.
-    Replace manually, restart and verify new version.
+13. Проверка без сети при запуске и вручную: сообщение о недоступности сети без
+    блокировки соединения.
+14. Проверка текущей версии с сетью: подпись подтверждена, версии корректны.
+15. Подмените манифест или подпись; предложите переадресацию HTTP, неверные
+    SHA-256/размер, усечённый пакет, несовместимые сведения, понижение или
+    предварительную версию. Каждый случай должен завершаться «ОБНОВЛЕНИЕ
+    ОТКЛОНЕНО» без запасного пути и изменения состояния.
+16. Отмените реальное скачивание пакета: незавершённый файл не активируется.
+17. Установите допустимый новый пакет без соединения, подключитесь и проверьте.
+18. Установите при соединении: явное подтверждение, защищённый новый каталог,
+    остановка, запуск, стабилизация, проверка, фиксация `active-runtime.json` и
+    сохранность конфигурации и пользовательских списков.
+19. Имитируйте ошибку запуска или проверки кандидата: ожидается «ОБНОВЛЕНИЕ
+    ОТКАЧЕНО», предыдущий движок работает, состояние восстановлено. Завершите
+    процесс во время ожидания и перезапустите — кандидат не повышается.
+20. Предложите допустимое обновление программы: `CHEBURNET-new.exe` скачивается
+    и открывается его каталог, но текущий EXE не перезаписывается и не запускает
+    новый бинарный файл с повышенными правами автоматически. Замените вручную и
+    проверьте версию.
 
-## Platform/release checks
+## Платформа и релиз
 
-21. Test Windows Terminal and classic conhost, DPI 100/125/150/200%, Defender
-    behavior, SmartScreen presentation and optional real Authenticode signature.
-    Do not add AV exclusions.
-22. Verify release notices/LICENSES/source links, SHA-256, and that public release
-    contains one end-user `CHEBURNET.exe` plus documentation artifacts.
-23. Uninstall: disconnect/close, remove `%ProgramData%\CHEBURNET`, remove portable
-    EXE; confirm no service, scheduled task or telemetry residue was created.
+21. Проверьте Windows Terminal и классический conhost, DPI 100/125/150/200%,
+    Defender, SmartScreen и при наличии реальную подпись Authenticode. Не
+    добавляйте исключения антивируса.
+22. Проверьте уведомления, лицензии, ссылки на исходники, SHA-256 и наличие
+    одного пользовательского `CHEBURNET.exe` плюс документации в релизе.
+23. Удаление: отключитесь, закройте программу, удалите
+    `%ProgramData%\CHEBURNET` и переносимый EXE. Не должно остаться службы,
+    запланированного задания или следов телеметрии.
 
-Until this checklist is executed on clean elevated VMs, the correct verdict is
-`READY_FOR_WINDOWS_RC_SMOKE_TEST`, not `PUBLIC_READY`.
+До выполнения этого списка на чистых виртуальных машинах с повышенными правами
+вердикт — `ГОТОВО_К_РУЧНОЙ_ПРОВЕРКЕ_WINDOWS_RC`, а не
+`ГОТОВО_К_СТАБИЛЬНОМУ_ПУБЛИЧНОМУ_ВЫПУСКУ`.

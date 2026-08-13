@@ -30,7 +30,7 @@ BOOL WINAPI CtrlHandler(DWORD type) {
         case CTRL_CLOSE_EVENT:
         case CTRL_LOGOFF_EVENT:
         case CTRL_SHUTDOWN_EVENT:
-            Logger::Warn(L"console closing - winws left running (Job has no kill-on-close)");
+            Logger::Warn(L"консоль закрывается — winws оставлен работать по политике объекта заданий");
             Logger::Shutdown();
             return FALSE;
         default:
@@ -53,11 +53,11 @@ App::App() : App(CliFlags{}) {}
 
 App::App(const CliFlags& flags) : cli_(flags) {
     if (paths_.ProgramDataRoot().empty()) {
-        throw std::runtime_error("trusted ProgramData known-folder lookup failed");
+        throw std::runtime_error("не удалось получить доверенный путь ProgramData");
     }
     const update::StateResult state = update::LoadRuntimeState(paths_.ActiveRuntimePath());
     if (!state.ok && !state.missing) {
-        throw std::runtime_error("trusted runtime state is invalid");
+        throw std::runtime_error("доверенное состояние рабочей среды недействительно");
     }
     if (state.ok && !state.state.pending.empty()) {
         const RuntimePaths pendingPaths(str::ToUtf16(state.state.pending));
@@ -70,22 +70,22 @@ App::App(const CliFlags& flags) : cli_(flags) {
             const StopResult stopped = recovery.Stop();
             if (stopped.status != StopStatus::Stopped &&
                 stopped.status != StopStatus::NotRunning) {
-                throw std::runtime_error("cannot stop interrupted pending runtime");
+                throw std::runtime_error("не удалось остановить прерванную ожидающую среду");
             }
-            Logger::Error(L"interrupted pending runtime stopped before state recovery");
+            Logger::Error(L"прерванная ожидающая среда остановлена перед восстановлением состояния");
         } else if (active.valid() &&
                    !str::IEqualsAscii(std::wstring_view(active.imagePath),
                                       std::wstring_view(currentPaths.WinwsExePath()))) {
             // Never normalize an unexplained running version by merely
             // clearing pending state. That would make process identity and
             // active-runtime.json disagree.
-            throw std::runtime_error("running runtime is neither current nor pending");
+            throw std::runtime_error("работающая среда не является ни текущей, ни ожидающей");
         }
         update::StoredRuntimeState recovered = state.state;
         recovered.pending.clear();
         recovered.lastResult = "interrupted-pending-rolled-back";
         if (!update::SaveRuntimeState(paths_.ActiveRuntimePath(), recovered)) {
-            throw std::runtime_error("cannot clear interrupted pending state");
+            throw std::runtime_error("не удалось очистить прерванное ожидающее состояние");
         }
     }
     if (paths_.RuntimeVersion() != upstream::kVersion) {
@@ -94,7 +94,7 @@ App::App(const CliFlags& flags) : cli_(flags) {
         ExtractionResult verified = extractor.VerifyInstalledRuntime(catalog);
         if (!verified.ok) {
             if (!state.ok || state.state.previousKnownGood.empty()) {
-                throw std::runtime_error("active runtime failed verification and has no rollback");
+                throw std::runtime_error("активная среда не прошла проверку, версия для отката отсутствует");
             }
             RuntimePaths fallback(str::ToUtf16(state.state.previousKnownGood));
             std::vector<RuntimeStrategy> fallbackCatalog;
@@ -107,7 +107,7 @@ App::App(const CliFlags& flags) : cli_(flags) {
                 fallbackVerified = fallbackExtractor.VerifyInstalledRuntime(fallbackCatalog);
             }
             if (!fallbackVerified.ok) {
-                throw std::runtime_error("active and previous-known-good runtimes failed verification");
+                throw std::runtime_error("активная и предыдущая рабочая среды не прошли проверку");
             }
             update::StoredRuntimeState rolledBack = state.state;
             rolledBack.current = state.state.previousKnownGood;
@@ -115,11 +115,11 @@ App::App(const CliFlags& flags) : cli_(flags) {
             rolledBack.pending.clear();
             rolledBack.lastResult = "startup-integrity-rollback";
             if (!update::SaveRuntimeState(paths_.ActiveRuntimePath(), rolledBack)) {
-                throw std::runtime_error("cannot commit startup rollback state");
+                throw std::runtime_error("не удалось зафиксировать состояние отката при запуске");
             }
             paths_ = std::move(fallback);
             if (!fallbackCatalog.empty()) strategies::ActivateCatalog(std::move(fallbackCatalog));
-            Logger::Error(L"active runtime integrity failed; previous-known-good restored");
+            Logger::Error(L"целостность активной среды нарушена; восстановлена предыдущая рабочая версия");
         } else {
             strategies::ActivateCatalog(std::move(catalog));
         }
@@ -129,17 +129,17 @@ App::App(const CliFlags& flags) : cli_(flags) {
     std::wstring migrationDetail;
     if (!MigrateLegacyConfig(paths_.ProgramDataRoot() + L"\\config.json",
                              paths_.ConfigPath(), migrationDetail)) {
-        Logger::Warn(L"legacy config migration rejected: " + migrationDetail);
-    } else if (migrationDetail == L"legacy config imported; source retained") {
+        Logger::Warn(L"миграция старой конфигурации отклонена: " + migrationDetail);
+    } else if (migrationDetail == L"старая конфигурация импортирована; исходный файл сохранён") {
         Logger::Info(migrationDetail);
     }
     config_ = LoadConfig(paths_.ConfigPath());
     if (!strategies::Exists(config_.strategyId)) {
-        Logger::Warn(L"unknown strategy in config, resetting to default: " +
+        Logger::Warn(L"неизвестная стратегия в конфигурации, сброс на стандартную: " +
                      str::ToUtf16(config_.strategyId));
         config_.strategyId = "general";
         if (!SaveConfig(paths_.ConfigPath(), config_))
-            throw std::runtime_error("cannot persist default strategy migration");
+            throw std::runtime_error("не удалось сохранить переход на стандартную стратегию");
     }
     pm_ = std::make_unique<ProcessManager>(paths_);
     operationState_.Complete(pm_->IsConnectedByUs() ? AppOperationState::Connected
@@ -307,7 +307,7 @@ int App::Run() {
     mascotClock_.Reset();
     ::SetConsoleCtrlHandler(CtrlHandler, TRUE);
 
-    Logger::Info(L"UI start, strategy=" + str::ToUtf16(config_.strategyId));
+    Logger::Info(L"интерфейс запущен, стратегия=" + str::ToUtf16(config_.strategyId));
 
     if (!PrivilegeManager::IsElevated()) {
         ShowMessage(L"ТРЕБУЮТСЯ ПРАВА АДМИНИСТРАТОРА",
@@ -326,7 +326,7 @@ int App::Run() {
     HandleExit();
 
     SetCursorVisible(true);
-    Logger::Info(L"UI exit");
+    Logger::Info(L"интерфейс завершён");
     return 0;
 }
 
@@ -337,13 +337,13 @@ void App::CheckUpdatesOnStart() {
     if (check.status == update::CheckStatus::Available &&
         check.manifest.payload.version != config_.update.skippedPayloadVersion) {
         ShowMessage(L"ДОСТУПНО ОБНОВЛЕНИЕ",
-                    L"Проверенный update manifest предлагает launcher " +
-                        str::ToUtf16(check.manifest.launcher.version) + L" и engine " +
+                    L"Проверенный манифест обновления предлагает CHEBURNET " +
+                        str::ToUtf16(check.manifest.launcher.version) + L" и движок " +
                         str::ToUtf16(check.manifest.payload.version) +
                         L".\nПрименение доступно в меню «Проверить обновления».",
                     ui::UiColor::Warning);
     } else if (check.status == update::CheckStatus::Rejected) {
-        ShowMessage(L"UPDATE REJECTED", check.message, ui::UiColor::Error);
+        ShowMessage(L"ОБНОВЛЕНИЕ ОТКЛОНЕНО", check.message, ui::UiColor::Error);
     }
     // Offline/current checks are intentionally silent: startup must remain
     // usable with the existing known-good runtime.
@@ -388,10 +388,10 @@ void App::HandleExit() {
             Confirm(L"Оставить соединение активным после выхода? (Enter — да, Esc — остановить)");
         if (leave) {
             pm_->Detach();
-            Logger::Info(L"exit: winws left running by user choice");
+            Logger::Info(L"выход: winws оставлен работать по выбору пользователя");
         } else {
             StopResult sr = StopManagedConnection();
-            if (sr.status == StopStatus::Stopped) Logger::Info(L"exit: winws stopped by user");
+            if (sr.status == StopStatus::Stopped) Logger::Info(L"выход: winws остановлен пользователем");
         }
     }
 }

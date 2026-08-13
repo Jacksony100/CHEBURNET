@@ -23,7 +23,7 @@ std::wstring FormatError(unsigned long code) {
             text.back() == L'.')) {
         text.pop_back();
     }
-    if (text.empty()) text = L"(no description available)";
+    if (text.empty()) text = L"(описание отсутствует)";
 
     return L"код " + std::to_wstring(code) + L": " + text;
 }

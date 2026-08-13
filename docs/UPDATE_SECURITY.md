@@ -1,73 +1,83 @@
-# Update security model
+# Модель безопасности обновлений
 
-## Trusted inputs
+## Доверенные входные данные
 
-The launcher trusts only keys compiled from
-`resources/update/release-public-key.json`, its built-in resource manifest, and
-protected state/files below `%ProgramData%\CHEBURNET`. GitHub transport alone is
-not a trust root. The current key id is `cheburnet-release-2026`, algorithm
-ECDSA P-256 with SHA-256.
+Программа доверяет только ключам, скомпилированным из
+`resources/update/release-public-key.json`, встроенному манифесту ресурсов и
+защищённым состоянию/файлам в `%ProgramData%\CHEBURNET`. Сам транспорт GitHub
+не является корнем доверия. Текущий идентификатор ключа —
+`cheburnet-release-2026`, алгоритм — ECDSA P-256 с SHA-256.
 
-The client fetches an exact manifest and detached Base64 signature over HTTPS,
-strictly parses the envelope only to select `key_id`, verifies the exact bytes
-through Windows CNG, and only then trusts versions, HTTPS URLs, sizes, hashes or
-compatibility fields. Signature failure has one result: `UPDATE REJECTED`; there
-is no unsigned fallback.
+Клиент получает точный манифест и отдельную подпись в Base64 по HTTPS. Оболочка
+строго разбирается только для выбора `key_id`, затем точные байты проверяются
+через Windows CNG. Только после этого доверенными становятся версии, URL HTTPS,
+размеры, SHA-256 и поля совместимости. Ошибка подписи имеет единственный исход:
+«ОБНОВЛЕНИЕ ОТКЛОНЕНО»; запасного пути без подписи нет.
 
-## Downloads and activation
+## Скачивание и активация
 
-Native WinHTTP uses standard certificate validation/system proxy policy,
-HTTPS-only redirects, bounded redirects/timeouts/content size, cancellation,
-real byte progress and ETag support. Downloads go to a protected staging root
-using random `CREATE_NEW` temporary files and atomic activation. SHA-256 and
-exact size must match the signed manifest.
+Нативный WinHTTP использует стандартную проверку сертификатов, системную
+политику прокси, только переадресации HTTPS, ограничения числа переадресаций,
+времени ожидания и размера, отмену, фактический ход скачивания и ETag. Файлы
+попадают в защищённую область через случайные временные имена `CREATE_NEW` и
+атомарную активацию. SHA-256 и точный размер обязаны совпасть с подписанным
+манифестом.
 
-Payloads use CHEBURNET's narrow `.cbpkg` format rather than raw upstream ZIP.
-Each regular file has an offset, size and SHA-256; paths are normalized and
-allowlisted to engine binaries, vendor lists, strategy catalog and provenance.
-Absolute/parent/UNC/drive/ADS paths, duplicates, reparse/symlink metadata,
-trailing data, truncation, excessive files and sizes are rejected.
+Пакет движка использует узкий формат `.cbpkg`, а не произвольный ZIP исходного
+проекта. Для каждого обычного файла указаны смещение, размер и SHA-256; пути
+нормализуются и разрешаются только для бинарников движка, списков поставщика,
+каталога стратегий и данных происхождения. Отклоняются абсолютные и родительские
+пути, UNC, имена дисков и ADS, повторы, сведения о точках повторного разбора и
+символических ссылках, лишние данные, усечение и превышение лимитов.
 
-A payload is extracted into a new `runtime\<version>` directory. Every file,
-the strict strategy catalog, provider/version and schema are rechecked. If a
-trusted engine is running, activation stops only its verified pid/creation-time/
-image identity, starts the candidate transactionally, waits for stabilization
-and checks identity/liveness. State commits only after health succeeds. Any
-candidate failure attempts the protected previous-known-good runtime. Interrupted
-`pending` state is never promoted at startup.
+Пакет распаковывается в новый `runtime\<version>`. Повторно проверяются каждый
+файл, строгий каталог стратегий, поставщик, версия и схема. Если доверенный
+движок работает, активация останавливает только проверенный PID с совпадающими
+временем создания и образом, транзакционно запускает кандидата, ждёт
+стабилизации и проверяет его личность и работоспособность. Состояние фиксируется
+только после успешной проверки. Ошибка кандидата запускает восстановление
+предыдущей известной рабочей версии. Прерванное состояние `pending` никогда не
+повышается при старте.
 
-User config/list overlays are outside the immutable runtime and survive updates.
-At most current, previous-known-good, pending and built-in versions are retained
-by cleanup.
+Пользовательские конфигурация и дополнения к спискам находятся вне неизменяемой
+рабочей среды и переживают обновления. Очистка сохраняет текущую, предыдущую
+рабочую, ожидающую и встроенную версии.
 
-## Launcher updates
+## Обновления CHEBURNET
 
-The launcher artifact has its own version/hash/size/minimum-version state
-machine. This release intentionally uses the safer specification fallback:
-download and verify `CHEBURNET-new.exe`, then explicitly open its protected
-location. It does not overwrite or execute a new elevated binary silently.
+Артефакт программы имеет собственный автомат версий, SHA-256, размера и
+минимальной версии. В этом выпуске используется наиболее консервативный
+вариант: скачать и проверить `CHEBURNET-new.exe`, затем явно открыть его
+защищённую директорию. Новый бинарный файл с повышенными правами не
+перезаписывается и не запускается скрыто.
 
-## Availability, downgrade and compatibility
+## Доступность, понижение версии и совместимость
 
-Network failure never blocks a known-good runtime. Stable mode rejects
-prereleases, all remote downgrades, unknown payload/strategy schemas and payloads
-requiring a newer launcher. No developer downgrade override is enabled in
-Release builds.
+Сбой сети не блокирует известную рабочую среду. Стабильный канал отклоняет
+предварительные версии, любое понижение, неизвестные схемы движка/стратегий и
+пакет, требующий более новую программу. В выпускных сборках нет режима
+разработчика, разрешающего понижение версии.
 
-## Key rotation and release signing
+Для кандидата RC2 адрес подписанного манифеста указывает прямо на тег
+`v1.0.0-rc.2`: GitHub намеренно не включает предварительные выпуски в
+`/releases/latest`. В стабильной версии адрес переключается обратно на
+стабильный выпуск после завершения ручных проверок.
 
-Add a new public key to a reviewed launcher release before signing manifests
-with it. Maintain an overlap period; revoke a compromised key by shipping a new
-launcher through the normal independently verified release channel. Private CNG
-key blobs are provided to CI only as the masked
-`CHEBURNET_SIGNING_KEY_CNG_BLOB_B64` secret or kept DPAPI-protected offline.
+## Ротация ключей и подпись релиза
 
-To reproduce public hashes:
+Новый публичный ключ сначала добавляется в проверенный выпуск CHEBURNET, и лишь
+затем им подписываются манифесты. Сохраняйте период перекрытия; скомпрометированный
+ключ отзывается выпуском новой программы по обычному независимо проверяемому
+каналу. Закрытые объекты CNG передаются непрерывной сборке только как скрытый
+секрет `CHEBURNET_SIGNING_KEY_CNG_BLOB_B64` либо хранятся вне сети под защитой
+DPAPI.
+
+Воспроизведение публичных SHA-256:
 
 ```powershell
 Get-FileHash .\CHEBURNET.exe -Algorithm SHA256
 Get-FileHash .\cheburnet-payload-<engine-version>.cbpkg -Algorithm SHA256
 ```
 
-The detached signature covers the manifest file byte-for-byte; newline or
-whitespace changes invalidate it.
+Отдельная подпись покрывает манифест побайтно: изменение перевода строки или
+пробела делает подпись недействительной.

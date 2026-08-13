@@ -1,9 +1,11 @@
-# Dependency summary
+# Сводка зависимостей
 
-CHEBURNET launcher code uses only the C++20 standard library and Windows SDK
-APIs (Win32, CNG/BCrypt, Crypt32, WinHTTP, ACL, Shell and console APIs). It links
-the static MSVC runtime and adds no third-party source library dependency.
+Код программы запуска CHEBURNET использует только стандартную библиотеку C++20
+и API Windows SDK: Win32, CNG/BCrypt, Crypt32, WinHTTP, ACL, Shell и консольные
+API. Программа связывается со статической средой MSVC и не добавляет сторонних
+исходных библиотек.
 
-Embedded runtime components and their source/license locations are enumerated
-in `THIRD_PARTY_NOTICES.md` and `LICENSES/`. Exact upstream release provenance is
-stored in `resources/upstream/provenance.json` and embedded into the executable.
+Встроенные компоненты среды выполнения и адреса их исходников/лицензий
+перечислены в `THIRD_PARTY_NOTICES.md` и `LICENSES/`. Точное происхождение
+исходного релиза хранится в `resources/upstream/provenance.json` и встраивается
+в исполняемый файл.

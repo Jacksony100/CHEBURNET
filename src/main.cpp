@@ -60,9 +60,9 @@ void WriteStderr(std::wstring_view text) {
 
 void PrintVersion() {
     WriteStdout(std::wstring(CHEBURNET_PRODUCT_WNAME) + L" v" + CHEBURNET_VERSION_WSTR +
-                L"\r\nConnection Console for Windows 10/11 x64\r\n"
-                L"Core engine: winws / WinDivert   Launcher: C++20 / Win32\r\n"
-                L"CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100\r\n");
+                L"\r\nКонсоль управления соединением для Windows 10/11 x64\r\n"
+                L"Движок: winws / WinDivert   Программа запуска: C++20 / Win32\r\n"
+                L"CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100\r\n");
 }
 
 void PrintHelp() {
@@ -159,7 +159,7 @@ int wmain(int argc, wchar_t** argv) {
     if (!bootstrap.ok) {
         const std::wstring message = L"Защищённый bootstrap отклонён:\n" + bootstrap.detail;
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — UPDATE REJECTED",
+        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — ОБНОВЛЕНИЕ ОТКЛОНЕНО",
                       MB_OK | MB_ICONERROR);
         ::CloseHandle(instanceMutex);
         return 3;
@@ -181,13 +181,13 @@ int wmain(int argc, wchar_t** argv) {
                                      cheburnet::str::ToUtf16(error.what());
         cheburnet::Logger::Error(message);
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — FATAL", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
         code = 1;
     } catch (...) {
         const wchar_t* message = L"Критическая неизвестная ошибка CHEBURNET.";
         cheburnet::Logger::Error(message);
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — FATAL", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(nullptr, message, L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
         code = 1;
     }
 

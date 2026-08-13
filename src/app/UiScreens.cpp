@@ -49,11 +49,11 @@ UiColor SevToColor(ui::Severity s) {
 
 const wchar_t* PhaseName(int phase) {
     switch (phase) {
-        case 1:  return L"ФАЗА 01 — SYSTEM";
-        case 2:  return L"ФАЗА 02 — PAYLOAD";
-        case 3:  return L"ФАЗА 03 — CONFIGURATION";
-        case 4:  return L"ФАЗА 04 — ENGINE";
-        case 5:  return L"ФАЗА 05 — LINK";
+        case 1:  return L"ФАЗА 01 — СИСТЕМА";
+        case 2:  return L"ФАЗА 02 — КОМПОНЕНТЫ";
+        case 3:  return L"ФАЗА 03 — КОНФИГУРАЦИЯ";
+        case 4:  return L"ФАЗА 04 — ДВИЖОК";
+        case 5:  return L"ФАЗА 05 — СОЕДИНЕНИЕ";
         default: return L"ИНИЦИАЛИЗАЦИЯ";
     }
 }
@@ -70,6 +70,43 @@ std::wstring ToUpperAsciiW(std::wstring_view s) {
     for (wchar_t& c : o)
         if (c >= L'a' && c <= L'z') c = static_cast<wchar_t>(c - L'a' + L'A');
     return o;
+}
+
+const wchar_t* GameFilterDisplayName(GameFilterMode mode) {
+    switch (mode) {
+        case GameFilterMode::Off: return L"выключен";
+        case GameFilterMode::All: return L"весь трафик";
+        case GameFilterMode::Tcp: return L"только TCP";
+        case GameFilterMode::Udp: return L"только UDP";
+    }
+    return L"выключен";
+}
+
+const wchar_t* UpdateModeDisplayName(UpdateMode mode) {
+    switch (mode) {
+        case UpdateMode::Notify: return L"только уведомлять";
+        case UpdateMode::Download: return L"скачивать после подтверждения";
+        case UpdateMode::Automatic: return L"автоматический";
+        case UpdateMode::Disabled: return L"отключён";
+    }
+    return L"только уведомлять";
+}
+
+std::wstring RuntimeResultDisplayName(std::string_view value) {
+    if (value.empty()) return L"нет данных";
+    if (value == "embedded-runtime-ready") return L"встроенная среда готова";
+    if (value == "interrupted-pending-rolled-back")
+        return L"прерванное обновление отменено";
+    if (value == "startup-integrity-rollback")
+        return L"при запуске восстановлена рабочая версия";
+    if (value == "candidate-preflight-ok")
+        return L"кандидат прошёл предварительную проверку";
+    if (value == "previous-runtime-preflight-failed")
+        return L"проверка предыдущей версии не пройдена";
+    if (value == "payload-update-committed") return L"обновление движка зафиксировано";
+    if (value == "payload-rollback-failed") return L"не удалось подтвердить откат движка";
+    if (value == "payload-update-rolled-back") return L"обновление движка отменено";
+    return L"неизвестный результат";
 }
 
 } // namespace
@@ -98,14 +135,14 @@ bool App::DownloadWithProgress(update::UpdateManager& manager,
     while (!done.load(std::memory_order_acquire)) {
         BeginFrame();
         if (EnsureUsableSize()) {
-            DrawHeader(L"// verified download");
+            DrawHeader(L"// проверенное скачивание");
             const std::uint64_t current = received.load(std::memory_order_relaxed);
             const std::uint64_t expected = total.load(std::memory_order_relaxed);
             const int percent = expected == 0
                                     ? 0
                                     : static_cast<int>(std::min<std::uint64_t>(
                                           99, (current * 100u) / expected));
-            ui_->FB().PutText(4, 5, L"Downloading " + label, ui_->Attr(UiColor::Primary));
+            ui_->FB().PutText(4, 5, L"Скачивание: " + label, ui_->Attr(UiColor::Primary));
             DrawProgressBar(ui_->FB(), ui_->Th(), 4, 7,
                             std::min(54, ui_->Width() - 10), percent,
                             clock.ElapsedMs(), true);
@@ -144,7 +181,7 @@ void App::ScreenSplash() {
             std::wstring load = L"ЗАГРУЗКА ";
             load.push_back(ui::Spinner::Frame(th.G(), t, ui_->Options().scaleMs(80)));
             ui_->PutCentered(cy + 2, load, UiColor::Muted);
-            DrawFooter(L"Space / Enter — пропустить");
+            DrawFooter(L"Пробел / Ввод — пропустить");
         }
         ui_->Present();
         const ui::KeyEvent ev = ui_->In().Poll(30);
@@ -162,17 +199,17 @@ void App::ScreenBoot() {
         MEMORYSTATUSEX ms{};
         ms.dwLength = sizeof(ms);
         const bool mem = ::GlobalMemoryStatusEx(&ms) != 0;
-        lines.push_back({L"MEMORY MAP", mem ? L"OK" : L"FAIL",
+        lines.push_back({L"КАРТА ПАМЯТИ", mem ? L"ГОТОВО" : L"ОШИБКА",
                          mem ? ui::Severity::Ok : ui::Severity::Error});
-        lines.push_back({L"RESOURCE TABLE", kEmbeddedResourceCount > 0 ? L"VERIFIED" : L"EMPTY",
+        lines.push_back({L"ТАБЛИЦА РЕСУРСОВ", kEmbeddedResourceCount > 0 ? L"ПРОВЕРЕНА" : L"ПУСТА",
                          kEmbeddedResourceCount > 0 ? ui::Severity::Ok : ui::Severity::Error});
         SC_HANDLE scm = ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
-        lines.push_back({L"COMMAND CHANNEL", scm ? L"READY" : L"LIMITED",
+        lines.push_back({L"КАНАЛ УПРАВЛЕНИЯ", scm ? L"ГОТОВ" : L"ОГРАНИЧЕН",
                          scm ? ui::Severity::Ok : ui::Severity::Warn});
         if (scm) ::CloseServiceHandle(scm);
-        lines.push_back({L"CONSOLE LINK", L"ESTABLISHED", ui::Severity::Ok});
-        lines.push_back({L"UPDATE CHANNEL", str::ToUtf16(config_.update.channel), ui::Severity::Ok});
-        lines.push_back({L"ENGINE", paths_.RuntimeVersion(), ui::Severity::Ok});
+        lines.push_back({L"КОНСОЛЬ", L"ПОДКЛЮЧЕНА", ui::Severity::Ok});
+        lines.push_back({L"КАНАЛ ОБНОВЛЕНИЙ", L"стабильный", ui::Severity::Ok});
+        lines.push_back({L"ДВИЖОК", paths_.RuntimeVersion(), ui::Severity::Ok});
     }
 
     const bool instant = !ui_->Options().animations;
@@ -189,7 +226,7 @@ void App::ScreenBoot() {
             auto& th = ui_->Th();
             const unsigned long long t = instant ? total + 1 : clock.ElapsedMs();
             int y = std::max(2, ui_->Height() / 2 - 6);
-            ui_->PutCentered(y, L"CHEBURNET BOOT ROM v" CHEBURNET_VERSION_WSTR, UiColor::Primary);
+            ui_->PutCentered(y, L"ЗАПУСК CHEBURNET v" CHEBURNET_VERSION_WSTR, UiColor::Primary);
             y += 2;
             const int baseX = ui_->CenterX(46);
             for (size_t i = 0; i < lines.size(); ++i) {
@@ -210,7 +247,7 @@ void App::ScreenBoot() {
                     ui::Scanline::Revealed(static_cast<int>(wm.size()), t - wmStart, wmMs, instant);
                 ui_->PutCentered(y + 1, wm.substr(0, static_cast<size_t>(reveal)), UiColor::Accent);
             }
-            DrawFooter(L"Space / Enter — пропустить");
+            DrawFooter(L"Пробел / Ввод — пропустить");
         }
         ui_->Present();
         if (instant) return;
@@ -232,7 +269,7 @@ ConnectResult App::ScreenConnect() {
                                                AppOperationState::Connecting)) {
         result.kind = ConnectKind::Error;
         result.message = L"Другая операция CHEBURNET уже выполняется.";
-        result.detail = L"Подключение отклонено state-machine (ERROR_BUSY).";
+        result.detail = L"Подключение отклонено автоматом состояний (ERROR_BUSY).";
         return result;
     }
 
@@ -251,7 +288,7 @@ ConnectResult App::ScreenConnect() {
             e.severity = ui::Severity::Error;
             e.label = L"Исключение в конвейере подключения";
             q.Push(std::move(e));
-            Logger::Error(L"exception in connect worker");
+            Logger::Error(L"исключение в рабочем потоке подключения");
         }
         operationState_.Complete(result.success() ? AppOperationState::Connected
                                                   : AppOperationState::Error);
@@ -317,9 +354,9 @@ ConnectResult App::ScreenConnect() {
                 fb.PutText(feedX + 5, y, DotRow(c.label, 42), th.Attr(UiColor::PrimaryDim));
                 const int s = status[i];
                 if (s == 2)
-                    fb.PutText(feedX + 44, y, L"OK", th.Attr(UiColor::Primary));
+                    fb.PutText(feedX + 44, y, L"ДА", th.Attr(UiColor::Primary));
                 else if (s == 3)
-                    fb.PutText(feedX + 44, y, L"WARN", th.Attr(UiColor::Warning));
+                    fb.PutText(feedX + 44, y, L"ВНИМ", th.Attr(UiColor::Warning));
                 else if (s == 4)
                     fb.PutText(feedX + 44, y, L"СБОЙ", th.Attr(UiColor::Error));
                 else if (s == 1)
@@ -351,7 +388,7 @@ ConnectResult App::ScreenConnect() {
             switch (result.kind) {
                 case ConnectKind::Connected:
                 case ConnectKind::AlreadyRunningOurs:
-                    fb.PutText(4, y, L"[ CONNECTED ] " + result.message, ui_->Attr(UiColor::Primary));
+                fb.PutText(4, y, L"[ ПОДКЛЮЧЕНО ] " + result.message, ui_->Attr(UiColor::Primary));
                     break;
                 case ConnectKind::AlreadyRunningService:
                 case ConnectKind::ForeignWinws:
@@ -378,8 +415,8 @@ ConnectResult App::ScreenConnect() {
                 mascotTop = y + 3;
             }
             DrawIdleMascot(mascotTop, ui_->Height() - 4);
-            DrawFooter(result.success() ? L"Enter — продолжить"
-                                        : L"Enter — меню     D — диагностика");
+            DrawFooter(result.success() ? L"Ввод — продолжить"
+                                        : L"Ввод — меню     D — диагностика");
         }
         ui_->Present();
         const ui::KeyEvent ev = ui_->In().Poll(200);
@@ -433,7 +470,7 @@ App::Post App::ScreenConnected(const ConnectResult& r) {
                 BeginFrame();
                 if (EnsureUsableSize()) {
                     DrawHeader(L"// соединение потеряно");
-                    std::wstring title = L"CONNECTION LOST";
+            std::wstring title = L"СОЕДИНЕНИЕ ПОТЕРЯНО";
                     if (ui_->Options().effGlitch())
                         title = ui::Glitch::Apply(title, ui_->Rand(),
                                                   static_cast<int>(lostClock.ElapsedMs() / 60), 3, 4);
@@ -473,22 +510,22 @@ App::Post App::ScreenConnected(const ConnectResult& r) {
             ui::FormatUptime(t, up);
             const bool hb = heartbeat > 0;
             std::vector<ui::StatusCell> left = {
-                {L"STATE      ", L"CONNECTED", UiColor::Primary},
-                {L"ENGINE     ", paths_.RuntimeVersion(), UiColor::Accent},
-                {L"STRATEGY   ", CurrentStrategy().displayName, UiColor::Accent},
-                {L"GAME MODE  ", str::ToUtf16(GameFilterModeName(config_.gameFilter)), UiColor::Accent},
-                {L"INTEGRITY  ", L"VERIFIED", UiColor::Primary},
+                {L"СОСТОЯНИЕ  ", L"ПОДКЛЮЧЕНО", UiColor::Primary},
+                {L"ДВИЖОК     ", paths_.RuntimeVersion(), UiColor::Accent},
+                {L"СТРАТЕГИЯ  ", CurrentStrategy().displayName, UiColor::Accent},
+                {L"ИГРОВОЙ    ", GameFilterDisplayName(config_.gameFilter), UiColor::Accent},
+                {L"ЦЕЛОСТНОСТЬ", L"ПРОВЕРЕНА", UiColor::Primary},
             };
             std::vector<ui::StatusCell> right = {
-                {L"SESSION  ", up, UiColor::Accent},
-                {L"PROCESS  ", L"PID " + std::to_wstring(pid), UiColor::Accent},
-                {L"WATCHDOG ", std::wstring(L"ACTIVE ") + th.G().heartbeat,
+                {L"СЕАНС    ", up, UiColor::Accent},
+                {L"ПРОЦЕСС  ", L"PID " + std::to_wstring(pid), UiColor::Accent},
+                {L"КОНТРОЛЬ ", std::wstring(L"АКТИВЕН ") + th.G().heartbeat,
                  hb ? UiColor::Primary : UiColor::Muted},
-                {L"VERSION  ", CHEBURNET_VERSION_WSTR, UiColor::Accent},
+                {L"ВЕРСИЯ   ", CHEBURNET_VERSION_WSTR, UiColor::Accent},
             };
             const int panelW = std::min(ui_->Width() - 4, 72);
             int y = 3;
-            y += DrawStatusPanel(fb, th, ui_->CenterX(panelW), y, panelW, L" CHEBURNET LINK STATUS ",
+            y += DrawStatusPanel(fb, th, ui_->CenterX(panelW), y, panelW, L" СОСТОЯНИЕ CHEBURNET ",
                                  left, right);
             y += 1;
 
@@ -503,11 +540,11 @@ App::Post App::ScreenConnected(const ConnectResult& r) {
             // Live status ticker (rebuilt each frame so uptime updates).
             ui::Ticker ticker;
             ticker.SetLines({
-                L"NETWORK ENGINE ............. RUNNING",
-                std::wstring(L"STRATEGY PROFILE ........... ") + ToUpperAsciiW(CurrentStrategy().displayName),
-                L"PROCESS WATCH .............. ACTIVE",
-                L"RESOURCE INTEGRITY ......... VERIFIED",
-                std::wstring(L"SESSION UPTIME ............. ") + up,
+                L"СЕТЕВОЙ ДВИЖОК ............. РАБОТАЕТ",
+                std::wstring(L"ПРОФИЛЬ СТРАТЕГИИ .......... ") + ToUpperAsciiW(CurrentStrategy().displayName),
+                L"КОНТРОЛЬ ПРОЦЕССА .......... АКТИВЕН",
+                L"ЦЕЛОСТНОСТЬ РЕСУРСОВ ....... ПРОВЕРЕНА",
+                std::wstring(L"ВРЕМЯ СЕАНСА ............... ") + up,
             });
             ui_->PutCentered(std::min(y, ui_->Height() - 5), ticker.Current(t, 2500),
                              UiColor::PrimaryDim);
@@ -516,7 +553,7 @@ App::Post App::ScreenConnected(const ConnectResult& r) {
                           : L"ожидание первой проверки...";
             ui_->PutCentered(std::min(y + 1, ui_->Height() - 4), lc, UiColor::Muted);
 
-            DrawFooter(L"[ Enter ] Меню   [ S ] Статус   [ D ] Диагностика   [ Q ] Выход");
+            DrawFooter(L"[ Ввод ] Меню   [ S ] Статус   [ D ] Диагностика   [ Q ] Выход");
         }
         ui_->Present();
 
@@ -546,9 +583,9 @@ App::Post App::ScreenConnected(const ConnectResult& r) {
             if (ev.ch == L'd' || ev.ch == L'D') ScreenDiagnostics();
             if (ev.ch == L's' || ev.ch == L'S') {
                 std::wstring info = L"Стратегия: " + CurrentStrategy().displayName + L"\n";
-                info += L"Игровой фильтр: " + str::ToUtf16(GameFilterModeName(config_.gameFilter)) + L"\n";
+                info += L"Игровой фильтр: " + std::wstring(GameFilterDisplayName(config_.gameFilter)) + L"\n";
                 info += L"PID winws.exe: " + std::to_wstring(pid) + L"\n";
-                info += L"Runtime: " + paths_.RuntimeVersionDir();
+                info += L"Рабочая среда: " + paths_.RuntimeVersionDir();
                 ShowMessage(L"СОСТОЯНИЕ СОЕДИНЕНИЯ", info, UiColor::Primary);
             }
         }
@@ -570,15 +607,15 @@ void App::ScreenMainMenu() {
         items.push_back({L"Отключиться", L"Остановить активный процесс winws.exe", connected, L'x'});
         items.push_back({L"Выбрать стратегию",
                          L"Открыть матрицу стратегий с поиском и описанием", true, L't'});
-        items.push_back({std::wstring(L"Настройки Game Filter  [") +
-                             str::ToUtf16(GameFilterModeName(config_.gameFilter)) + L"]",
-                         L"Режим: off → all → tcp → udp", true, L'g'});
+        items.push_back({std::wstring(L"Настройки игрового фильтра  [") +
+                             GameFilterDisplayName(config_.gameFilter) + L"]",
+                         L"Режимы: выключен → весь трафик → только TCP → только UDP", true, L'g'});
         items.push_back({L"Состояние системы", L"Права, ОС, службы, конфликты, пути", true, L'v'});
-        items.push_back({L"Проверить обновления", L"HTTPS + ECDSA P-256 signed manifest", true, L'u'});
+        items.push_back({L"Проверить обновления", L"HTTPS + подписанный ECDSA P-256 манифест", true, L'u'});
         items.push_back({L"Диагностика", L"Проверка компонентов, процесса и служб", true, L'd'});
         items.push_back({L"Журнал событий", L"Просмотр cheburnet.log с фильтром уровней", true, L'l'});
-        items.push_back({L"Настройки", L"Update policy и пользовательские параметры", true, L's'});
-        items.push_back({L"Обслуживание runtime", L"Удалить старые версии runtime-каталога", true, L'm'});
+        items.push_back({L"Настройки", L"Политика обновлений и пользовательские параметры", true, L's'});
+        items.push_back({L"Обслуживание среды", L"Удалить старые версии рабочей среды", true, L'm'});
         items.push_back({L"О программе", L"Версия, движок, лицензии, авторство", true, L'a'});
         items.push_back({L"Завершить CHEBURNET", L"Выйти (можно оставить соединение активным)", true, L'q'});
         menu.SetItems(std::move(items));
@@ -623,11 +660,12 @@ void App::ScreenMainMenu() {
                     case GameFilterMode::Udp: config_.gameFilter = GameFilterMode::Off; break;
                 }
                 if (!SaveConfig(paths_.ConfigPath(), config_)) {
-                    ShowMessage(L"ОШИБКА", L"Не удалось сохранить защищённые настройки Game Filter.",
+                    ShowMessage(L"ОШИБКА", L"Не удалось сохранить настройки игрового фильтра.",
                                 UiColor::Error);
                     break;
                 }
-                Logger::Info(L"game filter mode: " + str::ToUtf16(GameFilterModeName(config_.gameFilter)));
+                Logger::Info(L"режим игрового фильтра: " +
+                             std::wstring(GameFilterDisplayName(config_.gameFilter)));
                 if (pm_->IsConnectedByUs() &&
                     Confirm(L"Игровой фильтр изменён. Перезапустить соединение?")) {
                     const StopResult stopped = StopManagedConnection();
@@ -651,7 +689,7 @@ void App::ScreenMainMenu() {
                      L"\n";
                 s += L"Стратегия: " + CurrentStrategy().displayName + L"\n";
                 s += L"Игровой фильтр: " +
-                     str::ToUtf16(GameFilterModeName(config_.gameFilter)) + L"\n";
+                     std::wstring(GameFilterDisplayName(config_.gameFilter)) + L"\n";
                 const auto svc = probe::QueryService(L"zapret");
                 s += L"Служба zapret: " +
                      std::wstring(svc == probe::ServiceState::Running ? L"работает" : L"не мешает") + L"\n";
@@ -664,7 +702,7 @@ void App::ScreenMainMenu() {
                     if (p.pid != our) ++foreign;
                 s += L"Посторонний winws.exe: " +
                      std::wstring(foreign ? std::to_wstring(foreign) + L" процесс(ов)" : L"нет") + L"\n";
-                s += L"Runtime: " + paths_.RuntimeVersionDir() + L"\n";
+                s += L"Рабочая среда: " + paths_.RuntimeVersionDir() + L"\n";
                 s += L"Логи: " + paths_.LogsDir();
                 ShowMessage(L"СОСТОЯНИЕ СИСТЕМЫ", s, UiColor::Primary);
                 break;
@@ -674,7 +712,7 @@ void App::ScreenMainMenu() {
             case 7: ScreenLogs(); break;
             case 8: ScreenSettings(); break;
             case 9: {
-                if (Confirm(L"Удалить старые версии runtime-каталога (текущая сохранится)?")) {
+                if (Confirm(L"Удалить старые версии рабочей среды (текущая сохранится)?")) {
                     const AppOperationState prior = operationState_.Get();
                     if ((prior != AppOperationState::Disconnected &&
                          prior != AppOperationState::Connected) ||
@@ -720,7 +758,7 @@ void App::ScreenMainMenu() {
             const int menuX = 4;
             const int menuY = 5;
             fb.Box(menuX, menuY - 1, menuW, static_cast<int>(13) + 2, th.Attr(UiColor::PrimaryDim),
-                   th.G(), L" COMMAND CENTER ", th.Attr(UiColor::Primary));
+                   th.G(), L" КОМАНДНЫЙ ЦЕНТР ", th.Attr(UiColor::Primary));
             menu.Render(fb, th, menuX + 1, menuY, menuW - 2);
 
             // Description of selected item to the right.
@@ -731,7 +769,7 @@ void App::ScreenMainMenu() {
             }
 
             DrawIdleMascot(menuY + 14, ui_->Height() - 4);
-            DrawFooter(L"↑ ↓ выбор   Enter подтвердить   Esc выход   буква — быстрый выбор");
+            DrawFooter(L"↑ ↓ выбор   Ввод — подтвердить   Esc — выход   буква — быстрый выбор");
         }
         ui_->Present();
 
@@ -787,7 +825,7 @@ void App::ScreenStrategy() {
             const int boxW = ui_->Width() - 4;
             const int listH = ui_->Height() - 11;
             fb.Box(boxX, boxY, boxW, listH + 4, th.Attr(UiColor::PrimaryDim), th.G(),
-                   L" STRATEGY MATRIX ", th.Attr(UiColor::Primary));
+                       L" МАТРИЦА СТРАТЕГИЙ ", th.Attr(UiColor::Primary));
             fb.PutText(boxX + 2, boxY + 1, L"Поиск: ", th.Attr(UiColor::Muted));
             fb.PutText(boxX + 9, boxY + 1, search + th.G().cursorBlock, th.Attr(UiColor::Accent));
 
@@ -806,9 +844,9 @@ void App::ScreenStrategy() {
                 row += s->displayName;
                 if (static_cast<int>(row.size()) < 26) row.append(26 - row.size(), L' ');
                 // badge
-                const wchar_t* badge = !s->recommended ? L"NOT RECOMMENDED"
-                                       : s->id == "general" ? L"RECOMMENDED"
-                                                            : L"PROFILE";
+                const wchar_t* badge = !s->recommended ? L"НЕ РЕКОМЕНДУЕТСЯ"
+                                      : s->id == "general" ? L"РЕКОМЕНДУЕТСЯ"
+                                                           : L"ПРОФИЛЬ";
                 row += badge;
                 if (static_cast<int>(row.size()) < boxW - 4)
                     row.append(static_cast<size_t>(boxW - 4) - row.size(), L' ');
@@ -830,10 +868,10 @@ void App::ScreenStrategy() {
                 }
             }
             fb.PutText(2, ui_->Height() - 4,
-                       L"Текущая: " + CurrentStrategy().displayName + L"    Game Filter: " +
-                            str::ToUtf16(GameFilterModeName(config_.gameFilter)),
+                        L"Текущая: " + CurrentStrategy().displayName + L"    Игровой фильтр: " +
+                             GameFilterDisplayName(config_.gameFilter),
                        th.Attr(UiColor::Muted));
-            DrawFooter(L"↑ ↓ выбор   Enter применить   Space детали   ввод — поиск   Esc назад");
+            DrawFooter(L"↑ ↓ выбор   Ввод — применить   Пробел — детали   ввод — поиск   Esc — назад");
         }
         ui_->Present();
 
@@ -856,7 +894,7 @@ void App::ScreenStrategy() {
                                     UiColor::Error);
                         return;
                     }
-                    Logger::Info(L"strategy selected: " + str::ToUtf16(s->id));
+                    Logger::Info(L"выбрана стратегия: " + str::ToUtf16(s->id));
                     if (pm_->IsConnectedByUs() &&
                         Confirm(L"Стратегия изменена. Перезапустить соединение сейчас?")) {
                         const StopResult stopped = StopManagedConnection();
@@ -887,31 +925,31 @@ void App::ScreenDiagnostics() {
     auto add = [&](const std::wstring& t, ui::Severity s) { rows.push_back({t, s}); };
 
     const bool os = probe::Is64BitWindows() && probe::IsWindows10OrGreater();
-    add(os ? L"[OK]   Windows 10/11 x64" : L"[X]    Требуется Windows 10/11 x64",
+    add(os ? L"[ДА]   Windows 10/11 x64" : L"[X]    Требуется Windows 10/11 x64",
         os ? ui::Severity::Ok : ui::Severity::Error);
     const bool elev = PrivilegeManager::IsElevated();
-    add(elev ? L"[OK]   Права администратора" : L"[X]    Нет прав администратора",
+    add(elev ? L"[ДА]   Права администратора" : L"[X]    Нет прав администратора",
         elev ? ui::Severity::Ok : ui::Severity::Error);
     const bool dir = RuntimePaths::EnsureDir(paths_.BinDir());
-    add(dir ? L"[OK]   Рабочая директория доступна" : L"[X]    Нет доступа к директории",
+    add(dir ? L"[ДА]   Рабочая директория доступна" : L"[X]    Нет доступа к директории",
         dir ? ui::Severity::Ok : ui::Severity::Error);
 
     ResourceExtractor extractor(paths_);
     ExtractionResult ex = extractor.EnsureExtracted();
-    add(ex.ok ? L"[OK]   Компоненты извлечены и проверены (SHA-256)"
+    add(ex.ok ? L"[ДА]   Компоненты извлечены и проверены (SHA-256)"
               : L"[X]    Ошибка компонентов",
         ex.ok ? ui::Severity::Ok : ui::Severity::Error);
     std::wstring bad;
     const bool bins = extractor.VerifyBinaries(bad);
-    add(bins ? L"[OK]   Целостность бинарников подтверждена"
+    add(bins ? L"[ДА]   Целостность бинарников подтверждена"
              : L"[X]    Бинарник изменён: " + bad,
         bins ? ui::Severity::Ok : ui::Severity::Error);
     const bool winws = RuntimePaths::Exists(paths_.WinwsExePath());
-    add(winws ? L"[OK]   winws.exe на месте" : L"[X]    winws.exe отсутствует",
+    add(winws ? L"[ДА]   winws.exe на месте" : L"[X]    winws.exe отсутствует",
         winws ? ui::Severity::Ok : ui::Severity::Error);
 
     if (pm_->IsConnectedByUs()) {
-        add(L"[OK]   Активный winws.exe принадлежит CHEBURNET (pid " +
+        add(L"[ДА]   Активный winws.exe принадлежит CHEBURNET (PID " +
                 std::to_wstring(pm_->Record().pid) + L")",
             ui::Severity::Ok);
     } else {
@@ -921,7 +959,7 @@ void App::ScreenDiagnostics() {
     if (svc == probe::ServiceState::Running || svc == probe::ServiceState::StopPending)
         add(L"[?]    Служба zapret активна (возможен конфликт)", ui::Severity::Warn);
     else
-        add(L"[OK]   Служба zapret не мешает", ui::Severity::Ok);
+        add(L"[ДА]   Служба zapret не мешает", ui::Severity::Ok);
     auto winwsProcs = probe::FindProcesses(L"winws.exe");
     const ProcessRecord diagnosticRecord = pm_->Record();
     const unsigned long our = ProcessManager::TrustedPidForExclusion(
@@ -930,39 +968,40 @@ void App::ScreenDiagnostics() {
     for (auto& p : winwsProcs)
         if (p.pid != our) ++foreign;
     add(foreign ? L"[?]    Посторонний winws.exe: " + std::to_wstring(foreign)
-                : L"[OK]   Конфликтующих winws.exe нет",
+                : L"[ДА]   Конфликтующих winws.exe нет",
         foreign ? ui::Severity::Warn : ui::Severity::Ok);
-    add(L"[WARN] Smoke-test сетевого маршрута не выполнялся", ui::Severity::Warn);
-    add(L"[INFO] CHEBURNET " CHEBURNET_VERSION_WSTR L" | Engine " +
+    add(L"[ПРЕДУПРЕЖДЕНИЕ] Ручная проверка сетевого маршрута не выполнялась", ui::Severity::Warn);
+    add(L"[СВЕДЕНИЯ] CHEBURNET " CHEBURNET_VERSION_WSTR L" | Движок " +
             std::wstring(upstream::kProvider) + L" " + upstream::kVersion,
         ui::Severity::Info);
-    add(L"[INFO] Upstream release id " + std::to_wstring(upstream::kReleaseId) +
-            L" | commit " + str::ToUtf16(upstream::kCommit) +
-            L" | imported " + upstream::kImportedAt,
+    add(L"[СВЕДЕНИЯ] ID исходного релиза " + std::to_wstring(upstream::kReleaseId) +
+            L" | фиксация " + str::ToUtf16(upstream::kCommit) +
+            L" | импортирован " + upstream::kImportedAt,
         ui::Severity::Info);
-    add(L"[INFO] Archive SHA-256 " + str::ToUtf16(upstream::kArchiveSha256),
+    add(L"[СВЕДЕНИЯ] SHA-256 архива " + str::ToUtf16(upstream::kArchiveSha256),
         ui::Severity::Info);
-    add(L"[INFO] Active runtime " + paths_.RuntimeVersion() +
-            L" | strategy " + CurrentStrategy().displayName + L" | GameFilter " +
-            str::ToUtf16(GameFilterModeName(config_.gameFilter)), ui::Severity::Info);
+    add(L"[СВЕДЕНИЯ] Активная среда " + paths_.RuntimeVersion() +
+            L" | стратегия " + CurrentStrategy().displayName + L" | игровой фильтр " +
+            GameFilterDisplayName(config_.gameFilter), ui::Severity::Info);
     const update::StateResult runtimeState = update::LoadRuntimeState(paths_.ActiveRuntimePath());
     if (runtimeState.ok) {
-        add(L"[INFO] Previous known-good " +
+        add(L"[СВЕДЕНИЯ] Предыдущая рабочая среда " +
                 (runtimeState.state.previousKnownGood.empty()
-                     ? std::wstring(L"none")
+                     ? std::wstring(L"нет")
                      : str::ToUtf16(runtimeState.state.previousKnownGood)) +
-                L" | last update " + str::ToUtf16(runtimeState.state.lastResult),
+                L" | последнее обновление " +
+                    RuntimeResultDisplayName(runtimeState.state.lastResult),
             ui::Severity::Info);
-        add(L"[INFO] Payload manifest hash " +
+        add(L"[СВЕДЕНИЯ] SHA-256 манифеста пакета движка " +
                 (runtimeState.state.packageSha256.empty()
                      ? str::ToUtf16(upstream::kArchiveSha256)
                      : str::ToUtf16(runtimeState.state.packageSha256)),
             ui::Severity::Info);
     } else {
-        add(L"[X]    Active runtime state unreadable", ui::Severity::Error);
+        add(L"[X]    Состояние активной среды не читается", ui::Severity::Error);
     }
-    add(L"[INFO] Update channel " + str::ToUtf16(config_.update.channel) + L" | mode " +
-            str::ToUtf16(UpdateModeName(config_.update.mode)), ui::Severity::Info);
+    add(L"[СВЕДЕНИЯ] Канал обновлений стабильный | режим " +
+            std::wstring(UpdateModeDisplayName(config_.update.mode)), ui::Severity::Info);
 
     bool healthy = true;
     for (auto& r : rows)
@@ -971,16 +1010,16 @@ void App::ScreenDiagnostics() {
     // Save report (no sensitive data).
     const std::wstring reportPath = paths_.DiagnosticsReportPath();
     {
-        std::wstring report = L"=== CHEBURNET DIAGNOSTICS v" CHEBURNET_VERSION_WSTR L" ===\r\n";
-        report += L"CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100\r\n\r\n";
+        std::wstring report = L"=== ДИАГНОСТИКА CHEBURNET v" CHEBURNET_VERSION_WSTR L" ===\r\n";
+        report += L"CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100\r\n\r\n";
         for (auto& r : rows) report += r.text + L"\r\n";
-        report += L"\r\nDIAGNOSTIC VERDICT: ";
-        report += healthy ? L"HEALTHY" : L"ISSUES FOUND";
+        report += L"\r\nРЕЗУЛЬТАТ ДИАГНОСТИКИ: ";
+        report += healthy ? L"ИСПРАВНО" : L"ОБНАРУЖЕНЫ ПРОБЛЕМЫ";
         report += L"\r\n";
         const std::string utf8 = "\xEF\xBB\xBF" + str::ToUtf8(report);
         const securefs::Result savedReport = securefs::AtomicWrite(reportPath, utf8);
         if (!savedReport.ok) {
-            add(L"[X]    Не удалось сохранить защищённый diagnostic report",
+            add(L"[X]    Не удалось сохранить защищённый отчёт диагностики",
                 ui::Severity::Error);
             healthy = false;
         }
@@ -997,11 +1036,11 @@ void App::ScreenDiagnostics() {
                 fb.PutText(4, y++, r.text, ui_->Attr(SevToColor(r.sev)));
             }
             ++y;
-            fb.PutText(4, y++, std::wstring(L"DIAGNOSTIC VERDICT: ") + (healthy ? L"HEALTHY" : L"ISSUES FOUND"),
+            fb.PutText(4, y++, std::wstring(L"РЕЗУЛЬТАТ ДИАГНОСТИКИ: ") + (healthy ? L"ИСПРАВНО" : L"ЕСТЬ ПРОБЛЕМЫ"),
                        ui_->Attr(healthy ? UiColor::Primary : UiColor::Warning));
             fb.PutText(4, y, L"Отчёт: " + reportPath, ui_->Attr(UiColor::Muted));
             DrawIdleMascot(y + 2, ui_->Height() - 4);
-            DrawFooter(L"Enter — назад");
+            DrawFooter(L"Ввод — назад");
         }
         ui_->Present();
         const ui::KeyEvent ev = ui_->In().Poll(ui_->Options().effMascotIdle() ? 120 : 250);
@@ -1076,8 +1115,13 @@ void App::ScreenLogs() {
                 ui::LogLine ln;
                 // Format: [ts] [LEVEL] message
                 ui::Severity sev = ui::Severity::Info;
-                if (w.find(L"[ERROR]") != std::wstring::npos) sev = ui::Severity::Error;
-                else if (w.find(L"[WARN]") != std::wstring::npos) sev = ui::Severity::Warn;
+                if (w.find(L"[ОШИБКА]") != std::wstring::npos ||
+                    w.find(L"[ERROR]") != std::wstring::npos) {
+                    sev = ui::Severity::Error;
+                } else if (w.find(L"[ПРЕДУПРЕЖДЕНИЕ]") != std::wstring::npos ||
+                           w.find(L"[WARN]") != std::wstring::npos) {
+                    sev = ui::Severity::Warn;
+                }
                 ln.sev = sev;
                 // extract time and level cheaply
                 if (w.size() > 24 && w[0] == L'[') {
@@ -1085,7 +1129,9 @@ void App::ScreenLogs() {
                     size_t lb = w.find(L'[', 1);
                     size_t rb = (lb != std::wstring::npos) ? w.find(L']', lb) : std::wstring::npos;
                     if (lb != std::wstring::npos && rb != std::wstring::npos) {
-                        ln.level = w.substr(lb + 1, rb - lb - 1);
+                        ln.level = sev == ui::Severity::Error ? L"ОШИБКА"
+                                   : sev == ui::Severity::Warn ? L"ПРЕДУПР."
+                                                               : L"СВЕДЕНИЯ";
                         ln.text = (rb + 2 <= w.size()) ? w.substr(rb + 2) : L"";
                     } else {
                         ln.text = w;
@@ -1110,7 +1156,7 @@ void App::ScreenLogs() {
             const int listH = ui_->Height() - listY - 4;
             fb.Box(2, listY - 1, ui_->Width() - 4, listH + 2, th.Attr(UiColor::PrimaryDim), th.G());
             viewer.Render(fb, th, 4, listY, ui_->Width() - 8, listH);
-            DrawFooter(L"↑ ↓ / PgUp PgDn прокрутка   F — фильтр   O — открыть файл   Esc назад");
+            DrawFooter(L"↑ ↓ / PgUp PgDn — прокрутка   F — фильтр   O — открыть файл   Esc — назад");
         }
         ui_->Present();
         const ui::KeyEvent ev = ui_->In().Poll(250);
@@ -1140,40 +1186,40 @@ void App::ScreenUpdates() {
     const AppOperationState prior = operationState_.Get();
     if ((prior != AppOperationState::Disconnected && prior != AppOperationState::Connected) ||
         !operationState_.TryTransition(prior, AppOperationState::Updating)) {
-        ShowMessage(L"UPDATE REJECTED", L"Другая операция CHEBURNET уже выполняется.",
+        ShowMessage(L"ОБНОВЛЕНИЕ ОТКЛОНЕНО", L"Другая операция CHEBURNET уже выполняется.",
                     UiColor::Error);
         return;
     }
     ShowMessage(L"ПРОВЕРКА ОБНОВЛЕНИЙ",
-                L"[NET ] HTTPS / system proxy\n[AUTH] ECDSA P-256 detached signature\n"
-                L"Проверка выполняется. Сетевой сбой не мешает known-good runtime.",
+                L"[СЕТЬ] HTTPS / системный прокси\n[ПОДПИСЬ] Отдельная подпись ECDSA P-256\n"
+                L"Проверка выполняется. Сетевой сбой не мешает рабочей среде.",
                 UiColor::Primary);
     update::UpdateManager manager(paths_);
     const update::CheckResult check = manager.CheckNow(
         config_.update.mode != UpdateMode::Disabled);
     std::wstring details = check.message + L"\n\n";
-    details += L"Launcher: " CHEBURNET_VERSION_WSTR;
-        details += L"\nEngine: " + paths_.RuntimeVersion();
+    details += L"CHEBURNET: " CHEBURNET_VERSION_WSTR;
+        details += L"\nДвижок: " + paths_.RuntimeVersion();
     if (check.status == update::CheckStatus::Available) {
         const bool payloadSkipped =
             !check.manifest.payload.version.empty() &&
             check.manifest.payload.version == config_.update.skippedPayloadVersion;
-        details += L"\nДоступно: launcher " + str::ToUtf16(check.manifest.launcher.version);
-        details += L", engine " + str::ToUtf16(check.manifest.payload.version);
-        details += L"\n\nПрименение privileged bundle требует явного подтверждения.";
+        details += L"\nДоступно: CHEBURNET " + str::ToUtf16(check.manifest.launcher.version);
+        details += L", движок " + str::ToUtf16(check.manifest.payload.version);
+        details += L"\n\nПрименение привилегированного пакета требует явного подтверждения.";
         if (payloadSkipped && check.launcher != update::Eligibility::Upgrade) {
-            details += L"\nЭта версия engine пропущена в настройках. Сбросьте skip повторным подтверждением.";
-            if (Confirm(L"Сбросить пропуск этой версии engine?")) {
+            details += L"\nЭта версия движка пропущена в настройках. Сбросьте пропуск повторным подтверждением.";
+            if (Confirm(L"Сбросить пропуск этой версии движка?")) {
                 config_.update.skippedPayloadVersion.clear();
                 if (!SaveConfig(paths_.ConfigPath(), config_))
-                    details += L"\nНе удалось сохранить изменение skip policy.";
+                    details += L"\nНе удалось сохранить изменение политики пропуска.";
             }
-        } else if (Confirm(L"Скачать проверенные обновления в защищённый staging?")) {
+        } else if (Confirm(L"Скачать проверенные обновления в защищённую область?")) {
             std::wstring staged, error;
             bool any = false;
             if (check.launcher == update::Eligibility::Upgrade) {
                 if (DownloadWithProgress(manager, check.manifest.launcher,
-                                         L"CHEBURNET-new.exe", L"CHEBURNET launcher",
+                                         L"CHEBURNET-new.exe", L"CHEBURNET",
                                          staged, error)) {
                     any = true;
                     // Intentionally safer fallback from release-spec §15: the
@@ -1185,21 +1231,21 @@ void App::ScreenUpdates() {
                     sei.nShow = SW_SHOWNORMAL;
                     ::ShellExecuteExW(&sei);
                 } else {
-                    details += L"\nLauncher download: " + error;
+                    details += L"\nСкачивание CHEBURNET: " + error;
                 }
             }
             if (check.payload == update::Eligibility::Upgrade && !payloadSkipped) {
                 if (DownloadWithProgress(
                         manager, check.manifest.payload,
                         L"engine-" + str::ToUtf16(check.manifest.payload.version) + L".cbpkg",
-                        L"engine " + str::ToUtf16(check.manifest.payload.version),
+                        L"движок " + str::ToUtf16(check.manifest.payload.version),
                         staged, error)) {
                     any = true;
-                    if (Confirm(L"Применить verified engine bundle сейчас?")) {
+                    if (Confirm(L"Применить проверенный пакет движка сейчас?")) {
                         const update::PayloadApplyResult applied = manager.ApplyPayload(
                             check.manifest.payload, staged, *pm_, config_.strategyId,
                             config_.gameFilter, check.manifest.keyId);
-                        details += L"\nEngine: " + applied.message;
+                        details += L"\nДвижок: " + applied.message;
                         if (applied.status == update::PayloadApplyStatus::RolledBack ||
                             applied.status == update::PayloadApplyStatus::RollbackFailed) {
                             operationState_.Complete(AppOperationState::RollingBack);
@@ -1210,36 +1256,36 @@ void App::ScreenUpdates() {
                             if (!strategies::Exists(config_.strategyId)) {
                                 config_.strategyId = "general";
                                 if (!SaveConfig(paths_.ConfigPath(), config_))
-                                    details += L"\nНе удалось сохранить fallback-стратегию в config.";
+                                    details += L"\nНе удалось сохранить резервную стратегию в конфигурации.";
                                 details += L"\nВыбранная стратегия отсутствует; применена general.";
                             }
                         } else if (applied.status == update::PayloadApplyStatus::RolledBack) {
                             pm_ = std::make_unique<ProcessManager>(paths_);
                         }
                     } else {
-                        details += L"\nEngine package staged; применение отменено пользователем.";
+                        details += L"\nПакет движка помещён в защищённую область; применение отменено пользователем.";
                     }
                 } else {
-                    details += L"\nEngine download: " + error;
+                    details += L"\nСкачивание движка: " + error;
                 }
             } else if (check.payload == update::Eligibility::Upgrade && payloadSkipped) {
-                details += L"\nEngine " + str::ToUtf16(check.manifest.payload.version) +
+                details += L"\nДвижок " + str::ToUtf16(check.manifest.payload.version) +
                            L" пропущен согласно сохранённой политике.";
             }
             if (any) details += L"\nПроверенные файлы: " + paths_.UpdatesDir();
         } else if (check.payload == update::Eligibility::Upgrade &&
-                   Confirm(L"Пропустить только engine " +
+                   Confirm(L"Пропустить только движок " +
                            str::ToUtf16(check.manifest.payload.version) + L"?")) {
             config_.update.skippedPayloadVersion = check.manifest.payload.version;
             if (SaveConfig(paths_.ConfigPath(), config_))
-                details += L"\nВерсия engine помечена как пропущенная.";
+                details += L"\nВерсия движка помечена как пропущенная.";
             else
-                details += L"\nНе удалось сохранить skip policy.";
+                details += L"\nНе удалось сохранить политику пропуска.";
         }
     }
     operationState_.Complete(pm_->IsConnectedByUs() ? AppOperationState::Connected
                                                     : AppOperationState::Disconnected);
-    ShowMessage(check.status == update::CheckStatus::Rejected ? L"UPDATE REJECTED"
+    ShowMessage(check.status == update::CheckStatus::Rejected ? L"ОБНОВЛЕНИЕ ОТКЛОНЕНО"
                                                               : L"ОБНОВЛЕНИЯ",
                 details,
                 check.status == update::CheckStatus::Rejected ? UiColor::Error
@@ -1250,11 +1296,11 @@ void App::ScreenUpdates() {
 // ====================================================== SETTINGS SCREEN =====
 void App::ScreenSettings() {
     for (;;) {
-        std::wstring mode = str::ToUtf16(UpdateModeName(config_.update.mode));
-        std::wstring body = L"Update channel: stable\nUpdate mode: " + mode +
-                            L"\nCheck on start: " +
-                            std::wstring(config_.update.checkOnStart ? L"ON" : L"OFF") +
-                            L"\n\n[M] режим   [C] startup check   [Esc] назад";
+        std::wstring mode = UpdateModeDisplayName(config_.update.mode);
+        std::wstring body = L"Канал обновлений: стабильный\nРежим обновлений: " + mode +
+                            L"\nПроверка при запуске: " +
+                            std::wstring(config_.update.checkOnStart ? L"ВКЛ" : L"ВЫКЛ") +
+                            L"\n\n[M] режим   [C] проверка при запуске   [Esc] назад";
         BeginFrame();
         if (EnsureUsableSize()) {
             DrawHeader(L"// настройки");
@@ -1282,11 +1328,11 @@ void App::ScreenSettings() {
                 case UpdateMode::Disabled: config_.update.mode = UpdateMode::Notify; break;
             }
             if (!SaveConfig(paths_.ConfigPath(), config_))
-                ShowMessage(L"ОШИБКА", L"Не удалось сохранить update mode.", UiColor::Error);
+                ShowMessage(L"ОШИБКА", L"Не удалось сохранить режим обновлений.", UiColor::Error);
         } else if (ev.key == ui::Key::Char && (ev.ch == L'c' || ev.ch == L'C')) {
             config_.update.checkOnStart = !config_.update.checkOnStart;
             if (!SaveConfig(paths_.ConfigPath(), config_))
-                ShowMessage(L"ОШИБКА", L"Не удалось сохранить startup check.", UiColor::Error);
+                ShowMessage(L"ОШИБКА", L"Не удалось сохранить проверку при запуске.", UiColor::Error);
         }
     }
 }
@@ -1295,20 +1341,20 @@ void App::ScreenSettings() {
 void App::ScreenAbout() {
     ShowMessage(
         L"CHEBURNET v" CHEBURNET_VERSION_WSTR,
-        L"Connection Console for Windows 10/11 x64\n"
+        L"Управление соединением для Windows 10/11 x64\n"
         L"\n"
-        L"Engine: Flowseal/zapret-discord-youtube " + paths_.RuntimeVersion() + L"\n"
-        L"Core components: bol-van/winws, WinDivert\n"
-        L"Launcher: C++20 / Win32\n"
+        L"Движок: Flowseal/zapret-discord-youtube " + paths_.RuntimeVersion() + L"\n"
+        L"Основные компоненты: bol-van/winws, WinDivert\n"
+        L"Программа запуска: C++20 / Win32\n"
         L"\n"
         L"CHEBURNET LABS\n"
-        L"ENGINEERED BY MARSHAL JACKSONY100\n"
+        L"РАЗРАБОТАНО MARSHAL JACKSONY100\n"
         L"\n"
-        L"Build: Release x64\n"
-        L"Launcher: Jacksony100 / CHEBURNET contributors\n"
-        L"Upstream credits: Flowseal, bol-van, WinDivert and Cygwin authors\n"
+        L"Сборка: выпуск x64\n"
+        L"Программа: Jacksony100 / участники CHEBURNET\n"
+        L"Авторы исходных проектов: Flowseal, bol-van, WinDivert и Cygwin\n"
         L"Лицензии: THIRD_PARTY_NOTICES.md и LICENSES/",
-        UiColor::Primary, L"Enter — назад");
+        UiColor::Primary, L"Ввод — назад");
 }
 
 } // namespace cheburnet

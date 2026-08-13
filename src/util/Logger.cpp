@@ -20,12 +20,12 @@ constexpr long long kMaxLogBytes = 2 * 1024 * 1024; // rotate at 2 MiB
 
 const wchar_t* LevelName(LogLevel l) {
     switch (l) {
-        case LogLevel::Debug: return L"DEBUG";
-        case LogLevel::Info:  return L"INFO";
-        case LogLevel::Warn:  return L"WARN";
-        case LogLevel::Error: return L"ERROR";
+        case LogLevel::Debug: return L"ОТЛАДКА";
+        case LogLevel::Info:  return L"СВЕДЕНИЯ";
+        case LogLevel::Warn:  return L"ПРЕДУПРЕЖДЕНИЕ";
+        case LogLevel::Error: return L"ОШИБКА";
     }
-    return L"INFO";
+    return L"СВЕДЕНИЯ";
 }
 
 bool WriteAllUtf8_NoLock(const std::string& utf8) {
@@ -135,8 +135,8 @@ bool Logger::Init(const std::wstring& logDir, LogLevel minLevel) {
     ::GetFileSizeEx(g_file, &size);
     std::string banner;
     if (size.QuadPart == 0) banner += "\xEF\xBB\xBF";
-    banner += str::ToUtf8(L"[" + Timestamp() + L"] [INFO] ===== CHEBURNET " +
-                          std::wstring(CHEBURNET_VERSION_WSTR) + L" session start =====\r\n");
+    banner += str::ToUtf8(L"[" + Timestamp() + L"] [СВЕДЕНИЯ] ===== CHEBURNET " +
+                          std::wstring(CHEBURNET_VERSION_WSTR) + L" начало сеанса =====\r\n");
     if (!WriteAllUtf8_NoLock(banner) || !::FlushFileBuffers(g_file)) {
         ::CloseHandle(g_file);
         g_file = INVALID_HANDLE_VALUE;
@@ -149,7 +149,7 @@ void Logger::Shutdown() {
     std::scoped_lock lock(g_mutex);
     if (g_file != INVALID_HANDLE_VALUE) {
         const std::string tail =
-            str::ToUtf8(L"[" + Timestamp() + L"] [INFO] ===== session end =====\r\n");
+            str::ToUtf8(L"[" + Timestamp() + L"] [СВЕДЕНИЯ] ===== завершение сеанса =====\r\n");
         (void)WriteAllUtf8_NoLock(tail);
         ::FlushFileBuffers(g_file);
         ::CloseHandle(g_file);

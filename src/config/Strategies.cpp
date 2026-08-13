@@ -32,7 +32,9 @@ std::vector<RuntimeStrategy> BuildRegistry() {
         rs.id = g.id;
         rs.sourceFile = g.sourceFile;
         rs.displayName = g.displayName;
-        rs.description = g.description;
+        rs.description = rs.id == "general"
+                             ? L"Стандартная стратегия из general.bat"
+                             : L"Стратегия из исходного выпуска: " + rs.displayName;
         rs.recommended = g.recommended;
         rs.argTemplate.reserve(static_cast<size_t>(g.argc));
         for (int j = 0; j < g.argc; ++j) {
@@ -195,7 +197,7 @@ bool LoadCatalogFile(const std::wstring& path, std::vector<RuntimeStrategy>& out
         runtime.id = *id;
         runtime.sourceFile = str::ToUtf16(*source);
         runtime.displayName = str::ToUtf16(*name);
-        runtime.description = L"Imported from " + runtime.sourceFile;
+        runtime.description = L"Импортировано из " + runtime.sourceFile;
         runtime.recommended = *recommended;
         runtime.argTemplate.reserve(argv->size());
         for (const json::Value& value : *argv) {

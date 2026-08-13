@@ -1,27 +1,28 @@
-# Security policy
+# Политика безопасности
 
-## Reporting
+## Как сообщить об уязвимости
 
-Please report suspected vulnerabilities privately through the repository's
-GitHub Security Advisories feature. Do not include private keys, credentials,
-packet captures, or personal logs in a public issue. Include the CHEBURNET
-version, Windows version, reproducible steps, and the smallest redacted log
-excerpt needed to explain the issue.
+Сообщайте о предполагаемых уязвимостях конфиденциально через
+[GitHub Security Advisories](https://github.com/Jacksony100/CHEBURNET/security/advisories/new).
+Не публикуйте закрытые ключи, учётные данные, дампы пакетов и личные журналы в
+открытых Issues. Укажите версию CHEBURNET и Windows, шаги воспроизведения и
+минимальный обезличенный фрагмент журнала.
 
-Supported releases are the latest public stable/RC release only. Security fixes
-will be documented in release notes after users have had a reasonable upgrade
-window.
+Поддерживается только последний публичный стабильный выпуск или RC. Сведения
+об исправлениях безопасности публикуются после разумного срока на обновление.
 
-## Boundaries
+## Границы модели безопасности
 
-CHEBURNET runs elevated because its embedded upstream engine uses WinDivert.
-Update manifests are authenticated with ECDSA P-256 and embedded public keys;
-unsigned manifests, HTTP redirects, downgrades, incompatible schemas and unsafe
-packages fail closed. Release signing private keys must never be committed.
+CHEBURNET работает с повышенными правами, потому что встроенный движок
+использует WinDivert. Манифесты обновлений аутентифицируются ECDSA P-256 и
+встроенными публичными ключами. Неподписанные манифесты, HTTP-переадресации,
+понижения версии, несовместимые схемы и небезопасные пакеты отклоняются
+безопасного отказа. Закрытые ключи подписи релиза нельзя добавлять в репозиторий.
 
-Do not request or propose Defender exclusions, SmartScreen bypasses, injection,
-driver tampering, certificate-validation bypasses or raw remote-script execution.
-These are outside the project's security model.
+Не предлагайте исключения Defender, обход SmartScreen, внедрение в процессы,
+подмену драйвера, отключение проверки сертификатов или выполнение удалённых
+скриптов. Эти действия находятся вне модели безопасности проекта.
 
-Third-party engine vulnerabilities should also be coordinated with the relevant
-upstream project; see `THIRD_PARTY_NOTICES.md` for exact provenance.
+Уязвимости стороннего движка также следует согласованно передавать
+соответствующему исходному проекту. Точное происхождение компонентов указано в
+`THIRD_PARTY_NOTICES.md`.

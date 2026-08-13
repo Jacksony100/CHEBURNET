@@ -67,7 +67,7 @@ ProcessManager::ProcessManager(const RuntimePaths& paths) : paths_(paths) {
     // Never trust a record that names an image outside our runtime tree.
     // This defeats a forged record that tries to point us at a foreign process.
     if (record_.valid() && !IsExpectedWinwsImage(record_.imagePath, runtimeRoot_)) {
-        Logger::Warn(L"ignoring winws-run record with unexpected image: " + record_.imagePath);
+        Logger::Warn(L"запись запуска winws с неожиданным образом проигнорирована: " + record_.imagePath);
         record_ = {};
     }
     if (record_.valid() && !IdentityMatches(record_)) {
@@ -140,7 +140,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
         res.status = StartStatus::RedirectFailed;
         res.win32Error = ::GetLastError();
         closeStd();
-        Logger::Error(L"Start: failed to open redirect handles: " +
+        Logger::Error(L"запуск: не удалось открыть дескрипторы перенаправления: " +
                       win32::FormatError(res.win32Error));
         return res;
     }
@@ -213,7 +213,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
         res.status = StartStatus::CreateFailed;
         res.win32Error = createErr;
         ::CloseHandle(job);
-        Logger::Error(L"CreateProcessW failed: " + win32::FormatError(createErr));
+        Logger::Error(L"CreateProcessW завершился ошибкой: " + win32::FormatError(createErr));
         return res;
     }
 
@@ -271,7 +271,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
         res.status = StartStatus::ExitedEarly;
         res.exitCode = code;
         res.record = record_;
-        Logger::Error(L"winws.exe exited early, code=" + std::to_wstring(code));
+        Logger::Error(L"winws.exe завершился слишком рано, код=" + std::to_wstring(code));
         DeleteRecord(recordPath_);
         ::CloseHandle(pi.hProcess);
         ::CloseHandle(job);
@@ -308,7 +308,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
     CloseHandles();
     process_ = pi.hProcess;
     job_ = job;
-    Logger::Info(L"winws.exe started transactionally, pid=" + std::to_wstring(record_.pid));
+    Logger::Info(L"winws.exe запущен транзакционно, PID=" + std::to_wstring(record_.pid));
 
     res.status = StartStatus::Ok;
     res.record = record_;
@@ -345,7 +345,7 @@ StopResult ProcessManager::Stop() {
     // our runtime tree.
     if (!IsExpectedWinwsImage(record_.imagePath, runtimeRoot_)) {
         res.status = StopStatus::IdentityMismatch;
-        Logger::Warn(L"Stop refused: record image is not our winws.exe: " + record_.imagePath);
+        Logger::Warn(L"остановка отклонена: образ в записи не является нашим winws.exe: " + record_.imagePath);
         CloseHandles();
         return res;
     }
@@ -360,7 +360,7 @@ StopResult ProcessManager::Stop() {
     }
     if (!IdentityMatches(record_)) {
         res.status = StopStatus::IdentityMismatch;
-        Logger::Warn(L"Stop refused: pid " + std::to_wstring(record_.pid) +
+        Logger::Warn(L"остановка отклонена: PID " + std::to_wstring(record_.pid) +
                      L" no longer matches the recorded winws identity");
         // Do not delete the record blindly; leave for diagnostics.
         CloseHandles();
@@ -372,7 +372,7 @@ StopResult ProcessManager::Stop() {
     if (!h) {
         res.status = StopStatus::Failed;
         res.win32Error = ::GetLastError();
-        Logger::Error(L"Stop: OpenProcess failed: " + win32::FormatError(res.win32Error));
+        Logger::Error(L"остановка: OpenProcess завершился ошибкой: " + win32::FormatError(res.win32Error));
         return res;
     }
 
@@ -383,7 +383,7 @@ StopResult ProcessManager::Stop() {
         !str::IEqualsAscii(std::wstring_view(*img), std::wstring_view(record_.imagePath))) {
         ::CloseHandle(h);
         res.status = StopStatus::IdentityMismatch;
-        Logger::Warn(L"Stop refused after re-check: identity mismatch on pid " +
+        Logger::Warn(L"остановка отклонена после повторной проверки: PID не совпал " +
                      std::to_wstring(record_.pid));
         return res;
     }
@@ -393,7 +393,7 @@ StopResult ProcessManager::Stop() {
         res.status = StopStatus::Failed;
         res.win32Error = ::GetLastError();
         ::CloseHandle(h);
-        Logger::Error(L"TerminateProcess failed: " + win32::FormatError(res.win32Error));
+        Logger::Error(L"TerminateProcess завершился ошибкой: " + win32::FormatError(res.win32Error));
         return res;
     }
     const DWORD stopped = ::WaitForSingleObject(h, 5000);
@@ -401,13 +401,13 @@ StopResult ProcessManager::Stop() {
         res.status = StopStatus::Failed;
         res.win32Error = stopped == WAIT_FAILED ? ::GetLastError() : ERROR_TIMEOUT;
         ::CloseHandle(h);
-        Logger::Error(L"Stop: process termination was not confirmed: " +
+        Logger::Error(L"остановка: завершение процесса не подтверждено: " +
                       win32::FormatError(res.win32Error));
         return res;
     }
     ::CloseHandle(h);
 
-    Logger::Info(L"winws.exe (pid " + std::to_wstring(record_.pid) + L") stopped");
+    Logger::Info(L"winws.exe (PID " + std::to_wstring(record_.pid) + L") остановлен");
     DeleteRecord(recordPath_);
     CloseHandles();
     record_ = {};

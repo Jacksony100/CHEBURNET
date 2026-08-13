@@ -1,17 +1,19 @@
-# Privacy
+# Приватность
 
-CHEBURNET has no telemetry, analytics, traffic collection, crash upload, remote
-log upload or advertising. It does not inspect or retain browser data or
-credentials. Local operational logs are written only under
-`%ProgramData%\CHEBURNET\logs` and contain versions, update outcomes, process
-identity/status and errors—not packet contents or command-line payload data.
+В CHEBURNET нет телеметрии, аналитики, сбора трафика, отправки crash dumps,
+удалённой выгрузки журналов и рекламы. Программа не читает и не сохраняет
+данные браузера или учётные данные. Локальные технические журналы записываются
+только в `%ProgramData%\CHEBURNET\logs` и содержат версии, результаты
+обновлений, личность/состояние процесса и ошибки — без содержимого пакетов и
+полной командной строки движка.
 
-When update checks are enabled, the program sends ordinary HTTPS GET requests
-through the standard Windows WinHTTP proxy policy to the configured official
-CHEBURNET release endpoints. The User-Agent contains the CHEBURNET version.
-GitHub and the user's network provider may therefore observe normal request
-metadata under their own policies. No stable user identifier is added.
+При включённой проверке обновлений программа выполняет обычные HTTPS GET-запросы
+к официальным endpoints релиза CHEBURNET через системную proxy-политику
+WinHTTP. Заголовок User-Agent содержит версию CHEBURNET. GitHub и сетевой провайдер могут
+видеть стандартные метаданные запроса по собственным правилам. Стабильный
+идентификатор пользователя не добавляется.
 
-Set update mode to `disabled` or turn off startup checks in Settings to prevent
-automatic update requests. Local logs and runtime/user data are removed only by
-the user; CHEBURNET does not remotely delete or upload them.
+Чтобы исключить автоматические сетевые запросы, выберите режим обновлений
+`disabled` («отключены») или выключите проверку при запуске. Локальные журналы,
+рабочую среду и пользовательские данные удаляет только пользователь; CHEBURNET не
+удаляет и не отправляет их дистанционно.

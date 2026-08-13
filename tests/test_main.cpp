@@ -679,9 +679,9 @@ static int test_theme() {
     g_fail = 0;
     using namespace cheburnet::ui;
     // Footer branding.
-    CHECK(BrandingLine(LayoutMode::Full) == L"CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100");
-    CHECK(BrandingLine(LayoutMode::Compact) == L"CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100");
-    CHECK(BrandingLine(LayoutMode::Minimal) == L"BY MARSHAL JACKSONY100");
+    CHECK(BrandingLine(LayoutMode::Full) == L"CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100");
+    CHECK(BrandingLine(LayoutMode::Compact) == L"CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100");
+    CHECK(BrandingLine(LayoutMode::Minimal) == L"АВТОР: MARSHAL JACKSONY100");
 
     // ASCII fallback vs unicode glyphs.
     CHECK(UnicodeGlyphs().h == L'─');

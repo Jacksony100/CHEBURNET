@@ -1,7 +1,7 @@
 name: Сообщить об ошибке
 description: Воспроизводимая проблема в CHEBURNET
-title: "[Bug]: "
-labels: [bug]
+title: "[Ошибка]: "
+labels: [ошибка]
 body:
   - type: markdown
     attributes:
@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Версия CHEBURNET
-      placeholder: v1.0.0-rc.1
+      placeholder: v1.0.0-rc.2
     validations:
       required: true
   - type: dropdown
@@ -51,7 +51,7 @@ body:
     attributes:
       label: Проверки
       options:
-        - label: Я скачал EXE из официального GitHub Release и проверил SHA-256.
+        - label: Я скачал EXE из официального релиза GitHub и проверил SHA-256.
           required: true
         - label: Это не отчёт об уязвимости.
           required: true

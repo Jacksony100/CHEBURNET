@@ -1,19 +1,29 @@
-# Changelog
+# История изменений
+
+## 1.0.0-rc.2 — 2026-08-13
+
+- Полностью переведены пользовательский интерфейс, CLI, диагностика, документы,
+  GitHub-шаблоны, иллюстрации и метаданные Windows.
+- Адрес подписанного манифеста кандидата привязан к `v1.0.0-rc.2`, поскольку
+  GitHub не включает предварительные выпуски в адрес `/releases/latest`.
+- Добавлена финальная многоразмерная иконка CHEBURNET в общей айдентике проекта.
+- Исправлен тест защищённой записи процесса для среды GitHub Actions с повышенными правами.
 
 ## 1.0.0-rc.1 — 2026-08-13
 
-- Imported immutable Flowseal `zapret-discord-youtube` 1.10.1 release artifact.
-- Replaced the fixed strategy table with strict dynamic discovery and
-  four-mode GameFilter fidelity verification.
-- Closed public-release P1/P2 filesystem, logging, extraction, ACL, process,
-  stale-PID, console-state and JSON-parser findings.
-- Added signed fail-closed launcher/payload update infrastructure, protected
-  staging, allowlisted packages, versioned activation and rollback.
-- Split immutable runtime data from persistent user configuration/list overlays.
-- Added public licenses, security/privacy/update documentation, CI and release
-  workflows.
-- Fixed protected-file ACL verification on NTFS: regular-file ACEs are now
-  validated without directory-only inheritance flags. This restores secure
-  logger/state/process-record writes while preserving the exact protected DACL.
-- Early startup and CLI messages now use native UTF-16 console output, avoiding
-  question-mark mojibake under the default Windows CRT locale.
+- Импортирован неизменяемый релиз Flowseal `zapret-discord-youtube` 1.10.1.
+- Фиксированная таблица стратегий заменена строгим динамическим обнаружением и
+  проверкой точности четырёх режимов игрового фильтра.
+- Закрыты P1/P2 замечания публичного релиза по файловой системе, журналам,
+  распаковке, ACL, процессам, устаревшим PID, состоянию консоли и JSON-парсеру.
+- Реализованы подписанные обновления программы и движка с безопасным отказом:
+  защищённая область, разрешённый состав пакета, версионная активация и откат.
+- Неизменяемая среда выполнения отделена от постоянных пользовательских
+  настроек и дополнений к спискам.
+- Добавлены публичные лицензии, документы безопасности/приватности/обновлений,
+  непрерывная проверка и процесс публикации релиза.
+- Исправлена проверка ACL обычных файлов NTFS: ACE файла проверяются без флагов
+  наследования каталогов. Защищённые журналы и записи состояния снова работают
+  при сохранении строгой DACL.
+- Ранние сообщения и CLI переведены на нативный UTF-16, поэтому кириллица не
+  превращается в знаки вопроса при стандартной локали CRT Windows.

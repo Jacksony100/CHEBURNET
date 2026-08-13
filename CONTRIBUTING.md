@@ -1,10 +1,11 @@
-# Contributing
+# Участие в разработке
 
-Use a focused branch and keep changes reviewable. Never commit release private
-keys, credentials, generated secrets, user logs, or arbitrary upstream binary
-snapshots.
+Работайте в отдельной тематической ветке и делайте изменения удобными для
+проверки. Никогда не добавляйте в репозиторий закрытые ключи релиза, учётные
+данные, сгенерированные секреты, пользовательские журналы или произвольные
+снимки бинарников исходного проекта.
 
-Before submitting a change:
+Перед отправкой изменений выполните:
 
 ```powershell
 scripts\build-release.ps1 -BuildDir build
@@ -13,12 +14,14 @@ scripts\validate-licenses.ps1
 scripts\package.ps1 -BuildDir build -OutDir dist-test -SkipBuild
 ```
 
-Upstream changes must go through `scripts\sync-upstream.ps1`, which imports an
-immutable stable release asset into isolation and rejects unsupported BAT
-syntax. Review the provenance, binary diff, strategy catalog, licensing and
-fidelity output. Do not auto-merge an upstream update.
+Обновления исходного проекта должны проходить через `scripts\sync-upstream.ps1`. Скрипт
+импортирует неизменяемый стабильный релиз в изолированной временной директории
+и отклоняет неподдерживаемый синтаксис BAT. Проверяйте происхождение файлов,
+изменения бинарников, каталог стратегий, лицензии и результат проверок точности.
+Не объединяйте обновление исходного проекта автоматически.
 
-New C++ must remain C++20, dependency-light and clean under `/W4 /WX`. Privileged
-filesystem/network/update code must fail closed and include negative regression
-tests. Avoid shelling out at runtime; the launcher updater uses native WinHTTP
-and Windows CNG.
+Новый код C++ должен соответствовать C++20, не добавлять лишних зависимостей и
+собираться без предупреждений с `/W4 /WX`. Привилегированный код файловой
+системы, сети и обновлений обязан работать по принципу безопасного отказа и иметь
+негативные регрессионные тесты. Не запускайте командную оболочку во время
+работы программы: модуль обновлений использует нативные WinHTTP и Windows CNG.

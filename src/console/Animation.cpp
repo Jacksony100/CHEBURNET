@@ -70,7 +70,7 @@ void ConnectionAnimation::Run(std::stop_token st, int originX, int originY, int 
             Color rowColor = Color::Green;
             std::wstring status;
             if (reached >= stageIdx) {
-                status = L"OK";
+                status = L"ДА";
                 rowColor = Color::BrightGreen;
             } else if (state == RunState::Error && stageIdx == reached + 1) {
                 status = L"СБОЙ";

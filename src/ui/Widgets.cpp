@@ -192,10 +192,10 @@ void LogViewer::CycleFilter() {
 }
 std::wstring LogViewer::FilterName() const {
     switch (filter_) {
-        case 1:  return L"INFO";
-        case 2:  return L"WARN";
-        case 3:  return L"ERROR";
-        default: return L"ALL";
+        case 1:  return L"СВЕДЕНИЯ";
+        case 2:  return L"ПРЕДУПРЕЖДЕНИЯ";
+        case 3:  return L"ОШИБКИ";
+        default: return L"ВСЕ";
     }
 }
 std::vector<const LogLine*> LogViewer::Filtered() const {
@@ -268,8 +268,8 @@ void DrawMascot(FrameBuffer& fb, Theme& th, int x, int y, const MascotArt& art, 
 
 // -------------------------------------------------------------------- Footer
 std::wstring BrandingLine(LayoutMode mode) {
-    if (mode == LayoutMode::Minimal) return L"BY MARSHAL JACKSONY100";
-    return L"CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100";
+    if (mode == LayoutMode::Minimal) return L"АВТОР: MARSHAL JACKSONY100";
+    return L"CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100";
 }
 
 void DrawKeyHints(FrameBuffer& fb, Theme& th, int y, std::wstring_view hints) {

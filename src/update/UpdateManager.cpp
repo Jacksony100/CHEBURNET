@@ -45,8 +45,8 @@ std::wstring ErrorFor(HttpStatus status) {
         case HttpStatus::Timeout: return L"тайм-аут";
         case HttpStatus::Cancelled: return L"отменено";
         case HttpStatus::TooLarge: return L"превышен лимит размера";
-        case HttpStatus::InsecureRedirect: return L"небезопасный redirect отклонён";
-        case HttpStatus::RedirectLimit: return L"слишком много redirect";
+        case HttpStatus::InsecureRedirect: return L"небезопасная переадресация отклонена";
+        case HttpStatus::RedirectLimit: return L"слишком много переадресаций";
         case HttpStatus::Truncated: return L"усечённый ответ";
         default: return L"сеть недоступна";
     }
@@ -96,18 +96,18 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
         std::scoped_lock lock(g_manifestCacheMutex);
         if (g_verifiedManifestCache) {
             result = *g_verifiedManifestCache;
-            result.message += L" (verified ETag cache, HTTP 304)";
-            Logger::Info(L"update manifest not modified; reusing verified in-process cache");
+            result.message += L" (проверенный кэш ETag, HTTP 304)";
+            Logger::Info(L"манифест не изменён; используется проверенный кэш процесса");
             return result;
         }
         result.status = CheckStatus::Rejected;
-        result.message = L"UPDATE REJECTED: HTTP 304 without a verified manifest cache.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: HTTP 304 без проверенного кэша манифеста.";
         Logger::Error(result.message);
         return result;
     }
     if (manifest.status != HttpStatus::Ok) {
         result.status = CheckStatus::Offline;
-        result.message = L"Update check: " + ErrorFor(manifest.status);
+        result.message = L"Проверка обновлений: " + ErrorFor(manifest.status);
         Logger::Warn(result.message);
         return result;
     }
@@ -116,7 +116,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
     HttpResult signature = client.Get(kDefaultSignatureUrl, signatureOptions);
     if (signature.status != HttpStatus::Ok) {
         result.status = CheckStatus::Rejected;
-        result.message = L"UPDATE REJECTED: detached signature unavailable.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: отдельная подпись недоступна.";
         Logger::Error(result.message);
         return result;
     }
@@ -130,7 +130,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
         VerifyManifestSignature(manifestBytes, signatureBytes, untrusted.manifest.keyId) !=
             SignatureStatus::Verified) {
         result.status = CheckStatus::Rejected;
-        result.message = L"UPDATE REJECTED: подпись manifest недействительна.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: подпись манифеста недействительна.";
         Logger::Error(result.message);
         return result;
     }
@@ -139,7 +139,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
     const StateResult runtimeState = LoadRuntimeState(paths_.ActiveRuntimePath());
     if (!runtimeState.ok && !runtimeState.missing) {
         result.status = CheckStatus::Rejected;
-        result.message = L"UPDATE REJECTED: trusted runtime state is invalid.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: доверенное состояние среды недействительно.";
         Logger::Error(result.message);
         return result;
     }
@@ -158,7 +158,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
         result.launcher == Eligibility::InvalidVersion ||
         result.payload == Eligibility::InvalidVersion) {
         result.status = CheckStatus::Rejected;
-        result.message = L"UPDATE REJECTED: downgrade/prerelease/schema gate.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: запрещено понижение/предварительная версия либо несовместима схема.";
         Logger::Error(result.message);
         return result;
     }
@@ -169,8 +169,8 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
         result.status = CheckStatus::Current;
         result.message = L"CHEBURNET и движок актуальны.";
     }
-    Logger::Info(L"update signature VERIFIED; launcher=" +
-                 str::ToUtf16(result.manifest.launcher.version) + L" payload=" +
+    Logger::Info(L"подпись обновления проверена; программа=" +
+                 str::ToUtf16(result.manifest.launcher.version) + L" движок=" +
                  str::ToUtf16(result.manifest.payload.version));
     // Cache the authenticated interpretation regardless of whether the server
     // supplied an ETag. ETag is only a network optimization; it must never be
@@ -192,16 +192,16 @@ bool UpdateManager::DownloadVerified(const Artifact& artifact, const std::wstrin
         if (!g_verifiedManifestCache ||
             (!SameArtifact(artifact, g_verifiedManifestCache->manifest.launcher) &&
              !SameArtifact(artifact, g_verifiedManifestCache->manifest.payload))) {
-            error = L"Download rejected: artifact is not bound to the verified manifest.";
+        error = L"Скачивание отклонено: артефакт не связан с проверенным манифестом.";
             return false;
         }
     }
     if (!IsSafeStagingFileName(finalName)) {
-        error = L"Недопустимое имя staging-файла.";
+        error = L"Недопустимое имя файла в защищённой области.";
         return false;
     }
     if (!securefs::EnsureProtectedDirectory(paths_.UpdatesDir()).ok) {
-        error = L"Staging ACL/path validation failed.";
+        error = L"Проверка ACL или пути защищённой области завершилась ошибкой.";
         return false;
     }
     HttpOptions options;
@@ -212,16 +212,16 @@ bool UpdateManager::DownloadVerified(const Artifact& artifact, const std::wstrin
     HttpResult download = WinHttpClient{}.DownloadToProtectedFile(
         str::ToUtf16(artifact.url), options, stagedPath, artifact.size, artifact.sha256);
     if (download.status != HttpStatus::Ok) {
-        error = L"Download rejected: " + ErrorFor(download.status);
+        error = L"Скачивание отклонено: " + ErrorFor(download.status);
         stagedPath.clear();
         return false;
     }
     if (!ValidateArtifactFile(stagedPath, artifact.size, artifact.sha256)) {
-        error = L"Download rejected: SHA-256 mismatch.";
+        error = L"Скачивание отклонено: SHA-256 не совпадает.";
         stagedPath.clear();
         return false;
     }
-    Logger::Info(L"verified update staged: " + finalName + L" bytes=" +
+    Logger::Info(L"проверенное обновление помещено в защищённую область: " + finalName + L" байт=" +
                  std::to_wstring(artifact.size));
     return true;
 }
@@ -246,7 +246,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         if (!trusted || manifestKeyId != g_verifiedManifestCache->manifest.keyId ||
             !SameArtifact(*trusted, artifact)) {
             result.status = PayloadApplyStatus::PreflightRejected;
-            result.message = L"UPDATE REJECTED: payload is not bound to the verified manifest.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: пакет движка не связан с проверенным манифестом.";
             return result;
         }
     }
@@ -258,7 +258,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         stored.current = str::ToUtf8(upstream::kVersion);
     } else {
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: active-runtime state повреждён.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: состояние активной среды повреждено.";
         return result;
     }
     result.previousVersion = stored.current;
@@ -268,7 +268,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         artifact.payloadSchema != CHEBURNET_PAYLOAD_SCHEMA ||
         artifact.strategySchema != CHEBURNET_STRATEGY_SCHEMA) {
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: downgrade/schema/version gate.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: запрещено понижение либо несовместимы схема/версия.";
         return result;
     }
 
@@ -281,7 +281,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         !securefs::ValidatePathComponents(stagedPackage.substr(0, stagedSlash)).ok ||
         !ValidateArtifactFile(stagedPackage, artifact.size, artifact.sha256)) {
         result.status = PayloadApplyStatus::PackageRejected;
-        result.message = L"UPDATE REJECTED: staged package path/size/SHA-256 validation failed.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: не прошла проверка пути, размера или SHA-256 пакета.";
         return result;
     }
 
@@ -291,7 +291,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         parsed.package.payloadSchema != artifact.payloadSchema ||
         parsed.package.strategySchema != artifact.strategySchema) {
         result.status = PayloadApplyStatus::PackageRejected;
-        result.message = L"UPDATE REJECTED: package header не совпадает с signed manifest.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: заголовок пакета не совпадает с подписанным манифестом.";
         return result;
     }
     const RuntimePaths candidatePaths(str::ToUtf16(artifact.version));
@@ -300,7 +300,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
             securefs::RemoveTreeUnder(paths_.RuntimeRoot(), candidatePaths.RuntimeVersionDir());
         if (!removed.ok) {
             result.status = PayloadApplyStatus::PackageRejected;
-            result.message = L"UPDATE REJECTED: существующий candidate runtime небезопасен.";
+            result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: существующая среда-кандидат небезопасна.";
             return result;
         }
     }
@@ -308,7 +308,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         stagedPackage, parsed.package, paths_.RuntimeRoot(), candidatePaths.RuntimeVersionDir());
     if (!extracted.ok) {
         result.status = PayloadApplyStatus::PackageRejected;
-        result.message = L"UPDATE REJECTED: безопасная распаковка не пройдена: " +
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: безопасная распаковка не пройдена: " +
                          str::ToUtf16(extracted.error);
         return result;
     }
@@ -321,7 +321,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
     if (!verified.ok || !runtimeVerified.ok || candidateCatalog.empty()) {
         securefs::RemoveTreeUnder(paths_.RuntimeRoot(), candidatePaths.RuntimeVersionDir());
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: runtime preflight не пройден: " +
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: предварительная проверка рабочей среды не пройдена: " +
                          (runtimeVerified.error.empty() ? str::ToUtf16(verified.error)
                                                         : runtimeVerified.error);
         return result;
@@ -338,7 +338,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
     if (!selected) {
         securefs::RemoveTreeUnder(paths_.RuntimeRoot(), candidatePaths.RuntimeVersionDir());
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: candidate не содержит usable strategy.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: кандидат не содержит пригодной стратегии.";
         return result;
     }
     const bool wasRunning = manager.IsConnectedByUs();
@@ -350,7 +350,7 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
     if (!SaveRuntimeState(paths_.ActiveRuntimePath(), pending, &preflightError)) {
         securefs::RemoveTreeUnder(paths_.RuntimeRoot(), candidatePaths.RuntimeVersionDir());
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: не удалось записать pending state: " + preflightError;
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: не удалось записать состояние pending: " + preflightError;
         return result;
     }
 
@@ -364,12 +364,12 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         ExtractionResult previousVerified = previousExtractor.VerifyInstalledRuntime(rollbackCatalog);
         if (!previousVerified.ok) {
             result.status = PayloadApplyStatus::PreflightRejected;
-            result.message = L"UPDATE REJECTED: previous-known-good runtime verification failed.";
+            result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: проверка предыдущей рабочей среды не пройдена.";
             pending.pending.clear();
             pending.lastResult = "previous-runtime-preflight-failed";
             if (!SaveRuntimeState(paths_.ActiveRuntimePath(), pending)) {
                 result.status = PayloadApplyStatus::RollbackFailed;
-                result.message = L"UPDATE ERROR: previous runtime failed and pending state could not be cleared.";
+                result.message = L"ОШИБКА ОБНОВЛЕНИЯ: предыдущая среда неисправна, состояние ожидания не очищено.";
             }
             return result;
         }
@@ -443,9 +443,9 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
         strategies::ActivateCatalog(std::move(candidateCatalog));
         result.status = PayloadApplyStatus::Applied;
         result.message = wasRunning
-                             ? L"Движок обновлён и прошёл stabilization/health-check."
+                             ? L"Движок обновлён и прошёл стабилизацию/проверку состояния."
                              : L"Движок установлен; версия активна для следующего подключения.";
-        Logger::Info(L"payload update committed: " + str::ToUtf16(artifact.version));
+        Logger::Info(L"обновление движка зафиксировано: " + str::ToUtf16(artifact.version));
         return result;
     }
 
@@ -459,17 +459,17 @@ PayloadApplyResult UpdateManager::ApplyPayload(const Artifact& artifact,
     const bool stateRestored = SaveRuntimeState(paths_.ActiveRuntimePath(), rolledBack);
     if (!stateRestored || activated.status == ActivationStatus::RollbackFailed) {
         result.status = PayloadApplyStatus::RollbackFailed;
-        result.message = L"UPDATE ERROR: candidate failed and rollback could not be confirmed.";
+        result.message = L"ОШИБКА ОБНОВЛЕНИЯ: кандидат неисправен, откат не удалось подтвердить.";
     } else if (activated.status == ActivationStatus::StopFailed) {
         result.status = PayloadApplyStatus::StopRejected;
-        result.message = L"UPDATE REJECTED: trusted process не удалось безопасно остановить.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: доверенный процесс не удалось безопасно остановить.";
     } else if (activated.status == ActivationStatus::PreflightFailed) {
         result.status = PayloadApplyStatus::PreflightRejected;
-        result.message = L"UPDATE REJECTED: candidate preflight failed.";
+        result.message = L"ОБНОВЛЕНИЕ ОТКЛОНЕНО: предварительная проверка кандидата не пройдена.";
     } else {
         result.status = PayloadApplyStatus::RolledBack;
-        result.message = L"[ UPDATE ROLLED BACK ] Candidate не прошёл запуск/health-check; "
-                         L"восстановлен previous known-good runtime.";
+        result.message = L"[ ОБНОВЛЕНИЕ ОТКАЧЕНО ] Кандидат не прошёл запуск/проверку состояния; "
+                         L"восстановлена предыдущая рабочая среда.";
     }
     Logger::Error(result.message);
     return result;

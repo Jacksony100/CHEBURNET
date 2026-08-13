@@ -1,4 +1,4 @@
-name: Check upstream
+name: Проверка исходного выпуска
 on:
   schedule:
     - cron: '19 7 * * 1'
@@ -12,9 +12,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Check immutable latest stable release
+      - name: Проверка последнего неизменяемого стабильного релиза
         shell: powershell
         run: scripts\sync-upstream.ps1 -CheckOnly
-      - name: Policy
+      - name: Политика обновления
         shell: powershell
-        run: Write-Host 'A new upstream release requires a reviewed branch/PR; this workflow never merges binaries.'
+        run: Write-Host 'Новый исходный релиз требует проверенной ветки и запроса на слияние; этот процесс никогда не объединяет бинарники автоматически.'

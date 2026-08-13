@@ -1,3 +1,5 @@
+#pragma code_page(65001)
+
 #include <windows.h>
 #include "resource.h"
 #include "GeneratedVersion.h"
@@ -24,14 +26,14 @@ VS_VERSION_INFO VERSIONINFO
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        BLOCK "000904b0"
+        BLOCK "041904b0"
         BEGIN
             VALUE "CompanyName",      "CHEBURNET Labs"
-            VALUE "Comments",         "CHEBURNET LABS // ENGINEERED BY MARSHAL JACKSONY100"
-            VALUE "FileDescription",  "CHEBURNET Connection Console"
+            VALUE "Comments",         "CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100"
+            VALUE "FileDescription",  "CHEBURNET — управление соединением"
             VALUE "FileVersion",      CHEBURNET_VERSION_RC_STR
             VALUE "InternalName",     "CHEBURNET"
-            VALUE "LegalCopyright",   "CHEBURNET launcher (MIT). Third-party notices and licenses are included."
+            VALUE "LegalCopyright",   "CHEBURNET (MIT). Уведомления и лицензии сторонних компонентов включены."
             VALUE "OriginalFilename", "CHEBURNET.exe"
             VALUE "ProductName",      "CHEBURNET"
             VALUE "ProductVersion",   CHEBURNET_VERSION_RC_STR
@@ -39,6 +41,6 @@ BEGIN
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x9, 1200
+        VALUE "Translation", 0x419, 1200
     END
 END

@@ -1,37 +1,41 @@
-# CHEBURNET architecture
+# Архитектура CHEBURNET
 
-CHEBURNET preserves a one-EXE user experience around Flowseal's distribution of
-bol-van `winws.exe`. It does not reimplement the network engine.
+CHEBURNET сохраняет пользовательскую концепцию одного EXE вокруг поставки
+`winws.exe` проекта Flowseal. Сетевой движок bol-van не реализуется заново и не
+выдаётся за собственную разработку.
 
-## Build-time supply chain
+## Цепочка поставки при сборке
 
-`scripts/sync-upstream.ps1` selects an immutable, non-draft stable GitHub release
-asset, validates its published SHA-256, required layout and tag commit, and works
-inside an isolated temporary tree. The strict BAT importer rejects unsupported
-syntax, generates a typed strategy catalog, and the resource generator records
-every payload size/hash. Production inputs are replaced only after validation.
+`scripts/sync-upstream.ps1` выбирает неизменяемый стабильный релиз GitHub без
+статуса черновика, проверяет опубликованный SHA-256, обязательную структуру и
+фиксацию тега, работая в изолированной временной директории. Строгий импортёр
+BAT отклоняет неподдерживаемый синтаксис и создаёт типизированный каталог
+стратегий, а генератор ресурсов фиксирует размер и SHA-256 каждого файла
+движка. Рабочие входные данные заменяются только после успешной проверки.
 
-The latest imported provenance is embedded into About and Diagnostics.
+Данные происхождения импортированной версии встраиваются в «О программе» и
+диагностику.
 
-## Runtime modules
+## Модули среды выполнения
 
-- `main.cpp` performs DLL-search hardening, single-instance serialization,
-  elevation confirmation and no-logger protected-tree bootstrap.
-- `SecureFs` validates no-reparse path components, owner/protected DACL, hard
-  links, random atomic files and descendant-only cleanup.
-- `ResourceExtractor` verifies embedded immutable resources and external
-  runtime manifests; persistent user overlays are separate.
-- `Strategies` holds generated typed arguments, strict external catalog parsing
-  and four TCP/UDP GameFilter modes.
-- `ProcessManager` creates a suspended child with an explicit inherited-handle
-  list, assigns a Job, verifies image/creation identity, stabilizes, writes the
-  process record, and rolls back every partial failure.
-- `UpdateManager` separates signed launcher discovery/download from payload
-  package installation and versioned activation.
-- `UiContext` owns and restores console codepages, modes, cursor, attributes,
-  window/buffer and style state.
+- `main.cpp` усиливает поиск DLL, обеспечивает один экземпляр, проверяет права
+  администратора и создаёт защищённое дерево до запуска журнала.
+- `SecureFs` проверяет каждый компонент пути без точек повторного разбора,
+  владельца и защищённую DACL, жёсткие ссылки, случайные атомарные файлы и
+  безопасную очистку только дочерних путей.
+- `ResourceExtractor` проверяет неизменяемые встроенные ресурсы и внешние
+  манифесты рабочей среды; пользовательские дополнения хранятся отдельно.
+- `Strategies` содержит сгенерированные типизированные аргументы, строгий
+  разборщик внешнего каталога и четыре режима TCP/UDP игрового фильтра.
+- `ProcessManager` создаёт приостановленный процесс с явным списком наследуемых
+  дескрипторов, назначает объект заданий, проверяет образ и время создания, ждёт
+  стабилизации, записывает сведения процесса и откатывает любой частичный сбой.
+- `UpdateManager` разделяет подписанное обнаружение/скачивание программы и
+  установку пакета движка с версионной активацией.
+- `UiContext` владеет состоянием консоли и восстанавливает кодовые страницы,
+  режимы, курсор, атрибуты, размеры и стиль окна.
 
-## Protected data layout
+## Защищённая структура данных
 
 ```text
 %ProgramData%\CHEBURNET\
@@ -44,21 +48,24 @@ The latest imported provenance is embedded into About and Diagnostics.
   winws-run.txt
 ```
 
-SYSTEM and Administrators have full access; standard Users have read/execute.
-Privileged writes use 128-bit random `CREATE_NEW` temporary names,
-`FILE_FLAG_OPEN_REPARSE_POINT`, exact write/flush, mandatory ACL, hash/size
-verification, atomic rename and post-rename reopen verification.
+SYSTEM и Administrators имеют полный доступ; обычные Users — чтение и
+выполнение. Привилегированные записи используют 128-битные случайные имена с
+`CREATE_NEW`, `FILE_FLAG_OPEN_REPARSE_POINT`, точную запись и сброс буферов,
+обязательную ACL, проверку SHA-256/размера, атомарное переименование и повторную
+проверку после активации.
 
-## Update state machines
+## Автоматы состояний обновления
 
-Launcher updates authenticate metadata and artifact independently, enforce
-anti-downgrade, then stage a verified EXE for explicit manual replacement.
+Обновление CHEBURNET независимо проверяет подлинность метаданных и артефакта,
+запрещает понижение версии и помещает проверенный EXE в защищённую область для
+явной ручной замены.
 
-Payload updates authenticate metadata, download a bounded `.cbpkg`, validate its
-allowlisted table, extract into a new version directory, verify every entry and
-strategy, then run preflight → trusted stop → transactional start → stabilization
-and identity health → protected state commit. Failure restores the prior
-known-good version. A `pending` candidate is never treated as current after a
-crash.
+Обновление движка проверяет подлинность метаданных, скачивает ограниченный
+`.cbpkg`, проверяет разрешённую таблицу, распаковывает новый версионный каталог и
+проверяет каждый файл и стратегию. Затем выполняется цепочка: предварительная
+проверка → доверенная остановка → транзакционный запуск → стабилизация и
+проверка личности/работоспособности → фиксация защищённого состояния. При ошибке
+восстанавливается предыдущая известная рабочая версия. Незавершённое состояние
+`pending` после сбоя никогда не становится текущим.
 
-See `docs/UPDATE_SECURITY.md` for trust and key-rotation details.
+Подробности о доверии и ротации ключей: [UPDATE_SECURITY.md](UPDATE_SECURITY.md).

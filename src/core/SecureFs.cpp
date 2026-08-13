@@ -90,12 +90,12 @@ Result CheckHandle(HANDLE handle, ObjectKind kind, bool singleLink) {
     BY_HANDLE_FILE_INFORMATION info{};
     if (!::GetFileInformationByHandle(handle, &info)) return WinError(L"GetFileInformationByHandle");
     if ((info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
-        return Error(ERROR_REPARSE_TAG_INVALID, L"reparse point rejected");
+        return Error(ERROR_REPARSE_TAG_INVALID, L"точка повторного разбора отклонена");
     const bool directory = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     if (directory != (kind == ObjectKind::Directory))
-        return Error(ERROR_DIRECTORY, L"object type mismatch");
+        return Error(ERROR_DIRECTORY, L"тип объекта не совпадает");
     if (kind == ObjectKind::File && singleLink && info.nNumberOfLinks != 1)
-        return Error(ERROR_TOO_MANY_LINKS, L"hard-linked file rejected");
+        return Error(ERROR_TOO_MANY_LINKS, L"файл с жёсткой ссылкой отклонён");
     return {true, 0, {}};
 }
 
@@ -129,7 +129,7 @@ Result VerifyProtectedSecurity(HANDLE handle, const std::wstring& path, ObjectKi
         OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
         &owner, nullptr, &dacl, nullptr, &descriptor);
     if (query != ERROR_SUCCESS)
-        return Error(query, L"cannot verify protected owner/DACL: " + path);
+        return Error(query, L"не удалось проверить защищённых владельца и DACL: " + path);
 
     BYTE adminSid[SECURITY_MAX_SID_SIZE]{};
     BYTE systemSid[SECURITY_MAX_SID_SIZE]{};
@@ -160,7 +160,7 @@ Result VerifyProtectedSecurity(HANDLE handle, const std::wstring& path, ObjectKi
     ::LocalFree(descriptor);
     return verified ? Result{true, 0, {}}
                     : Error(ERROR_INVALID_SECURITY_DESCR,
-                            L"protected owner/DACL verification failed: " + path);
+                            L"проверка защищённых владельца и DACL не пройдена: " + path);
 }
 
 Result RemoveTreeImpl(const std::wstring& path) {
@@ -168,17 +168,17 @@ Result RemoveTreeImpl(const std::wstring& path) {
     if (attr == INVALID_FILE_ATTRIBUTES) {
         const DWORD error = ::GetLastError();
         if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return {true, 0, {}};
-        return Error(error, L"cannot query cleanup target");
+        return Error(error, L"не удалось проверить объект очистки");
     }
     if (attr & FILE_ATTRIBUTE_REPARSE_POINT) {
         ::SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
         const BOOL ok = (attr & FILE_ATTRIBUTE_DIRECTORY) ? ::RemoveDirectoryW(path.c_str())
                                                           : ::DeleteFileW(path.c_str());
-        return ok ? Result{true, 0, {}} : WinError(L"cannot unlink reparse object");
+        return ok ? Result{true, 0, {}} : WinError(L"не удалось удалить ссылку точки повторного разбора");
     }
     if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
         ::SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
-        return ::DeleteFileW(path.c_str()) ? Result{true, 0, {}} : WinError(L"cannot delete file");
+        return ::DeleteFileW(path.c_str()) ? Result{true, 0, {}} : WinError(L"не удалось удалить файл");
     }
 
     WIN32_FIND_DATAW data{};
@@ -192,12 +192,12 @@ Result RemoveTreeImpl(const std::wstring& path) {
         } while (::FindNextFileW(find, &data));
         const DWORD error = ::GetLastError();
         ::FindClose(find);
-        if (error != ERROR_NO_MORE_FILES) return Error(error, L"cleanup enumeration failed");
+        if (error != ERROR_NO_MORE_FILES) return Error(error, L"перечисление объектов очистки завершилось ошибкой");
     } else if (::GetLastError() != ERROR_FILE_NOT_FOUND) {
-        return WinError(L"cannot enumerate cleanup target");
+        return WinError(L"не удалось перечислить объект очистки");
     }
     ::SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
-    return ::RemoveDirectoryW(path.c_str()) ? Result{true, 0, {}} : WinError(L"cannot remove directory");
+    return ::RemoveDirectoryW(path.c_str()) ? Result{true, 0, {}} : WinError(L"не удалось удалить каталог");
 }
 
 } // namespace
@@ -209,7 +209,7 @@ Result ValidateObject(const std::wstring& path, ObjectKind kind, bool requireSin
     HANDLE handle = ::CreateFileW(path.c_str(), access,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                   nullptr, OPEN_EXISTING, flags, nullptr);
-    if (handle == INVALID_HANDLE_VALUE) return WinError(L"cannot open object without following reparse point");
+    if (handle == INVALID_HANDLE_VALUE) return WinError(L"не удалось открыть объект без перехода по точке повторного разбора");
     Result result = CheckHandle(handle, kind, requireSingleLink);
     ::CloseHandle(handle);
     if (!result.ok) result.detail += L": " + path;
@@ -219,7 +219,7 @@ Result ValidateObject(const std::wstring& path, ObjectKind kind, bool requireSin
 Result ValidatePathComponents(const std::wstring& path) {
     const std::wstring full = FullPath(path);
     if (full.size() < 3 || full[1] != L':' || full[2] != L'\\')
-        return Error(ERROR_BAD_PATHNAME, L"only absolute drive paths are accepted");
+        return Error(ERROR_BAD_PATHNAME, L"допустимы только абсолютные пути с буквой диска");
     std::size_t end = 3;
     for (;;) {
         end = full.find(L'\\', end);
@@ -240,7 +240,7 @@ Result ValidateProtectedObject(const std::wstring& path, ObjectKind kind,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                   nullptr, OPEN_EXISTING, flags, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
-        return WinError(L"cannot open protected object for validation");
+        return WinError(L"не удалось открыть защищённый объект для проверки");
     Result checked = CheckHandle(handle, kind, requireSingleLink);
     Result result = checked.ok ? VerifyProtectedSecurity(handle, path, kind) : checked;
     ::CloseHandle(handle);
@@ -252,7 +252,7 @@ Result ValidateProtectedHandle(void* nativeHandle, const std::wstring& path,
                                ObjectKind kind, bool requireSingleLink) {
     HANDLE handle = static_cast<HANDLE>(nativeHandle);
     if (!handle || handle == INVALID_HANDLE_VALUE)
-        return Error(ERROR_INVALID_HANDLE, L"invalid protected object handle: " + path);
+        return Error(ERROR_INVALID_HANDLE, L"недействительный дескриптор защищённого объекта: " + path);
     Result checked = CheckHandle(handle, kind, requireSingleLink);
     Result result = checked.ok ? VerifyProtectedSecurity(handle, path, kind) : checked;
     if (!result.ok && result.detail.empty()) result.detail = path;
@@ -267,7 +267,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, flags, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
-        return WinError(L"cannot open object for protected owner/DACL");
+        return WinError(L"не удалось открыть объект для защиты владельца и DACL");
     Result checked = CheckHandle(handle, kind, kind == ObjectKind::File);
     if (!checked.ok) {
         ::CloseHandle(handle);
@@ -279,7 +279,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
     if (!::ConvertStringSecurityDescriptorToSecurityDescriptorW(
             kind == ObjectKind::Directory ? kDirectoryAclSddl : kFileAclSddl,
             SDDL_REVISION_1, &descriptor, nullptr)) {
-        Result result = WinError(L"cannot create protected ACL");
+        Result result = WinError(L"не удалось создать защищённую ACL");
         ::CloseHandle(handle);
         return result;
     }
@@ -288,7 +288,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
     PACL dacl = nullptr;
     if (!::GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) || !present) {
         ::LocalFree(descriptor);
-        Result result = WinError(L"cannot read protected ACL");
+        Result result = WinError(L"не удалось прочитать защищённую ACL");
         ::CloseHandle(handle);
         return result;
     }
@@ -296,7 +296,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
     DWORD sidSize = sizeof(adminSid);
     if (!::CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, adminSid, &sidSize)) {
         ::LocalFree(descriptor);
-        Result result = WinError(L"cannot create Administrators SID");
+        Result result = WinError(L"не удалось создать SID группы Administrators");
         ::CloseHandle(handle);
         return result;
     }
@@ -310,7 +310,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
     ::LocalFree(descriptor);
     if (error != ERROR_SUCCESS) {
         ::CloseHandle(handle);
-        return Error(error, L"cannot apply protected owner/DACL: " + path);
+        return Error(error, L"не удалось применить защищённых владельца и DACL: " + path);
     }
     Result object = CheckHandle(handle, kind, kind == ObjectKind::File);
     Result verified = object.ok ? VerifyProtectedSecurity(handle, path, kind) : object;
@@ -322,7 +322,7 @@ Result HardenObject(const std::wstring& path, ObjectKind kind) {
 Result EnsureProtectedDirectory(const std::wstring& path) {
     const std::wstring full = FullPath(path);
     if (full.size() < 3 || full[1] != L':' || full[2] != L'\\')
-        return Error(ERROR_BAD_PATHNAME, L"invalid protected directory path");
+        return Error(ERROR_BAD_PATHNAME, L"недопустимый путь защищённого каталога");
     std::size_t end = 3;
     for (;;) {
         end = full.find(L'\\', end);
@@ -330,7 +330,7 @@ Result EnsureProtectedDirectory(const std::wstring& path) {
         const DWORD attr = ::GetFileAttributesW(component.c_str());
         if (attr == INVALID_FILE_ATTRIBUTES) {
             if (!::CreateDirectoryW(component.c_str(), nullptr) && ::GetLastError() != ERROR_ALREADY_EXISTS)
-                return WinError(L"cannot create protected directory component");
+                return WinError(L"не удалось создать компонент защищённого каталога");
         }
         Result checked = ValidateObject(component, ObjectKind::Directory, false);
         if (!checked.ok) return checked;
@@ -344,9 +344,9 @@ Result EnsureProtectedDirectory(const std::wstring& path) {
 Result AtomicWrite(const std::wstring& target, const void* data, std::size_t size,
                    const std::string& expectedSha256) {
     std::optional<std::string> memorySha = IntegrityVerifier::Sha256Hex(data, size);
-    if (!memorySha) return Error(ERROR_CRC, L"cannot hash memory buffer");
+    if (!memorySha) return Error(ERROR_CRC, L"не удалось вычислить SHA-256 буфера памяти");
     if (!expectedSha256.empty() && !IntegrityVerifier::HexEquals(*memorySha, expectedSha256))
-        return Error(ERROR_CRC, L"source buffer SHA-256 mismatch");
+        return Error(ERROR_CRC, L"SHA-256 исходного буфера не совпадает");
 
     return AtomicWriteStream(target, size, *memorySha,
                              [&](const StreamSink& sink) { return sink(data, size); });
@@ -356,7 +356,7 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
                          const std::string& expectedSha256,
                          const StreamProducer& producer) {
     if (!producer || expectedSha256.size() != 64)
-        return Error(ERROR_INVALID_PARAMETER, L"invalid atomic stream contract");
+        return Error(ERROR_INVALID_PARAMETER, L"недействительный контракт атомарного потока");
     const std::wstring parent = ParentOf(target);
     Result parentCheck = ValidatePathComponents(parent);
     if (!parentCheck.ok) return parentCheck;
@@ -374,7 +374,7 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
     HANDLE file = INVALID_HANDLE_VALUE;
     for (int attempt = 0; attempt < 16; ++attempt) {
         auto name = RandomTempName(parent);
-        if (!name) return Error(ERROR_GEN_FAILURE, L"CNG random generation failed");
+        if (!name) return Error(ERROR_GEN_FAILURE, L"CNG не удалось создать случайное значение");
         temporary = std::move(*name);
         file = ::CreateFileW(temporary.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0,
                              nullptr, CREATE_NEW,
@@ -382,9 +382,9 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
                                  FILE_FLAG_WRITE_THROUGH,
                              nullptr);
         if (file != INVALID_HANDLE_VALUE) break;
-        if (::GetLastError() != ERROR_FILE_EXISTS) return WinError(L"cannot create unique temp file");
+        if (::GetLastError() != ERROR_FILE_EXISTS) return WinError(L"не удалось создать уникальный временный файл");
     }
-    if (file == INVALID_HANDLE_VALUE) return Error(ERROR_FILE_EXISTS, L"unique temp collision limit");
+    if (file == INVALID_HANDLE_VALUE) return Error(ERROR_FILE_EXISTS, L"исчерпан лимит совпадений имён временных файлов");
 
     Result handleCheck = CheckHandle(file, ObjectKind::File, true);
     std::uint64_t streamed = 0;
@@ -400,7 +400,7 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
     ::CloseHandle(file);
     if (!ok) {
         ::DeleteFileW(temporary.c_str());
-        return Error(failure, L"privileged temp write/flush/type validation failed");
+        return Error(failure, L"запись, сброс буферов или проверка типа временного файла не пройдены");
     }
     Result hardened = HardenObject(temporary, ObjectKind::File);
     if (!hardened.ok) {
@@ -412,11 +412,11 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
     if (!diskSize || *diskSize != expectedSize || !diskSha ||
         !IntegrityVerifier::HexEquals(*diskSha, expectedSha256)) {
         ::DeleteFileW(temporary.c_str());
-        return Error(ERROR_CRC, L"privileged temp post-write verification failed");
+        return Error(ERROR_CRC, L"проверка временного файла после записи не пройдена");
     }
     if (!::MoveFileExW(temporary.c_str(), target.c_str(),
                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        Result failureResult = WinError(L"atomic activation failed");
+        Result failureResult = WinError(L"атомарная активация завершилась ошибкой");
         ::DeleteFileW(temporary.c_str());
         return failureResult;
     }
@@ -428,7 +428,7 @@ Result AtomicWriteStream(const std::wstring& target, std::uint64_t expectedSize,
     const auto finalSha = IntegrityVerifier::Sha256File(target);
     if (!finalSize || *finalSize != expectedSize || !finalSha ||
         !IntegrityVerifier::HexEquals(*finalSha, expectedSha256))
-        return Error(ERROR_CRC, L"activated file verification failed");
+        return Error(ERROR_CRC, L"проверка активированного файла не пройдена");
     return {true, 0, {}};
 }
 
@@ -448,11 +448,11 @@ bool IsStrictDescendant(const std::wstring& root, const std::wstring& candidate)
 
 Result RemoveTreeUnder(const std::wstring& allowedRoot, const std::wstring& target) {
     if (!IsStrictDescendant(allowedRoot, target))
-        return Error(ERROR_ACCESS_DENIED, L"cleanup target is not a strict descendant");
+        return Error(ERROR_ACCESS_DENIED, L"объект очистки не является строгим дочерним путём");
     Result rootCheck = ValidatePathComponents(allowedRoot);
     if (!rootCheck.ok) return rootCheck;
     const std::wstring parent = ParentOf(target);
-    if (parent.empty()) return Error(ERROR_BAD_PATHNAME, L"cleanup target has no parent");
+    if (parent.empty()) return Error(ERROR_BAD_PATHNAME, L"у объекта очистки нет родительского пути");
     Result parentCheck = ValidatePathComponents(parent);
     if (!parentCheck.ok) return parentCheck;
     return RemoveTreeImpl(FullPath(target));

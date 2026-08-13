@@ -1,21 +1,21 @@
-# Current upstream behavior mapping
+# Соответствие текущему исходному выпуску
 
-Embedded upstream: `Flowseal/zapret-discord-youtube` 1.10.1, imported from its
-immutable release asset. Exact release id, commit, URL and archive SHA-256 are in
-`resources/upstream/provenance.json`.
+Встроенный исходный проект: `Flowseal/zapret-discord-youtube` 1.10.1,
+импортированный из неизменяемого файла релиза. Точные ID релиза, фиксация, URL и SHA-256 архива
+записаны в `resources/upstream/provenance.json`.
 
-All matching `general*.bat` strategies are discovered dynamically. The importer
-normalizes supported BAT variables into `%BIN%`, `%LISTS%`, `%USER_LISTS%`,
-`%GAME_TCP%` and `%GAME_UDP%`, while preserving argument order, repeated
-`--new`, explicit `=!` resets, filters, fake payloads and quoting semantics.
-Unknown shell syntax or variables fail the import/build.
+Все стратегии `general*.bat` обнаруживаются динамически. Импортёр преобразует
+поддерживаемые BAT-переменные в `%BIN%`, `%LISTS%`, `%USER_LISTS%`, `%GAME_TCP%`
+и `%GAME_UDP%`, сохраняя порядок аргументов, повторные `--new`, явные сбросы
+`=!`, фильтры, ложные пакеты и правила кавычек. Неизвестный синтаксис оболочки или
+переменная останавливает импорт/сборку.
 
-The catalog size is discovered from the embedded upstream files at build time.
-Fidelity is verified independently for every discovered strategy in
-off/all/TCP/UDP GameFilter modes (`N × 4` command lines); no strategy total is
-maintained by hand.
+Размер каталога определяется из встроенных файлов исходного выпуска при каждой сборке.
+Точность проверяется независимо для каждой найденной стратегии в режимах
+игрового фильтра выключен/весь/TCP/UDP (`N × 4` командных строк); количество стратегий
+нигде не поддерживается вручную.
 
-Vendor `bin/` and `lists/` files are immutable runtime data and always hash
-verified. User list additions live in `%ProgramData%\CHEBURNET\user\lists`, so
-an engine update cannot overwrite them. CHEBURNET does not invoke upstream BAT
-scripts or raw updater logic at runtime.
+Файлы поставщика из `bin/` и `lists/` неизменяемы и всегда проверяются по SHA-256.
+Пользовательские дополнения находятся в `%ProgramData%\CHEBURNET\user\lists`,
+поэтому обновление движка не может их перезаписать. CHEBURNET не запускает
+исходные BAT-файлы и их необработанную логику обновления во время работы.

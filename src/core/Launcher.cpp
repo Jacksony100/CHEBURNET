@@ -22,24 +22,24 @@ namespace {
 const std::vector<ConnectCheckpoint> kCheckpoints = {
     {1, 1, 5, L"Определение версии Windows"},
     {2, 1, 8, L"Проверка архитектуры x64"},
-    {3, 1, 12, L"Проверка elevation token"},
-    {4, 1, 18, L"Подготовка защищённого runtime"},
-    {5, 2, 24, L"Проверка resource manifest"},
+    {3, 1, 12, L"Проверка прав администратора"},
+    {4, 1, 18, L"Подготовка защищённой среды"},
+    {5, 2, 24, L"Проверка манифеста ресурсов"},
     {6, 2, 34, L"Извлечение компонентов"},
     {7, 2, 44, L"Проверка SHA-256"},
     {8, 2, 50, L"Применение owner/DACL policy"},
     {9, 3, 55, L"Загрузка config.json"},
-    {10, 3, 60, L"Разрешение выбранной стратегии"},
-    {11, 3, 64, L"Проверка hostlist/ipset"},
-    {12, 3, 68, L"Формирование command line"},
-    {13, 4, 72, L"Предзапусковая integrity verification"},
-    {14, 4, 76, L"Создание job object"},
+    {10, 3, 60, L"Подготовка выбранной стратегии"},
+    {11, 3, 64, L"Проверка списков адресов"},
+    {12, 3, 68, L"Формирование командной строки"},
+    {13, 4, 72, L"Предзапусковая проверка целостности"},
+    {14, 4, 76, L"Создание объекта задания"},
     {15, 4, 82, L"Запуск winws.exe"},
-    {16, 4, 88, L"Проверка process identity"},
+    {16, 4, 88, L"Проверка идентичности процесса"},
     {17, 4, 92, L"Проверка стабильности процесса"},
     {18, 5, 95, L"Регистрация активной сессии"},
-    {19, 5, 98, L"Запуск process watcher"},
-    {20, 5, 100, L"Завершение handshake интерфейса"},
+    {19, 5, 98, L"Запуск наблюдения за процессом"},
+    {20, 5, 100, L"Завершение инициализации интерфейса"},
 };
 
 // Read up to `maxLines` trailing lines of a (small) UTF-8 log file.
@@ -116,7 +116,7 @@ std::wstring Launcher::StderrLogPath() const {
 ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode gameFilter,
                                 ui::UiEventQueue& events) {
     ConnectResult r;
-    Logger::Info(L"connect: strategy=" + str::ToUtf16(strategy.id) + L" gameFilter=" +
+    Logger::Info(L"подключение: стратегия=" + str::ToUtf16(strategy.id) + L" игровой_фильтр=" +
                  str::ToUtf16(GameFilterModeName(gameFilter)));
 
     const auto& CP = kCheckpoints;
@@ -157,7 +157,7 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
         r.kind = ConnectKind::Error;
         r.message = std::move(msg);
         r.detail = std::move(detail);
-        Logger::Error(L"connect failed at checkpoint " + std::to_wstring(i));
+            Logger::Error(L"подключение прервано на контрольной точке " + std::to_wstring(i));
         return r;
     };
 
@@ -232,7 +232,7 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
     okcp(7); // SHA-256 verified inside EnsureExtracted
     started(8);
     okcp(8); // owner/DACL applied per file inside EnsureExtracted
-    Logger::Info(L"resources ready (extracted=" + std::to_wstring(ex.extracted) + L", present=" +
+    Logger::Info(L"ресурсы готовы (извлечено=" + std::to_wstring(ex.extracted) + L", найдено=" +
                  std::to_wstring(ex.present) + L")");
 
     // ---- Phase 3: CONFIGURATION ----
@@ -258,8 +258,8 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
         strategies::BuildArguments(strategy, paths_.BinDir(), paths_.ListsDir(), gameFilter,
                                    paths_.UserDir() + L"\\lists");
     const std::wstring exe = paths_.WinwsExePath();
-    Logger::Info(L"winws argv prepared: executable=" + exe +
-                 L" argument_count=" + std::to_wstring(args.size()));
+    Logger::Info(L"аргументы winws готовы: файл=" + exe +
+                 L" количество_аргументов=" + std::to_wstring(args.size()));
     okcp(12);
 
     // ---- Phase 4: ENGINE ----
@@ -309,7 +309,7 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
     r.message = L"CHEBURNET активен.";
     r.detail = L"Стратегия: " + strategy.displayName + L"  |  PID: " +
                std::to_wstring(sr.record.pid);
-    Logger::Info(L"connect success, pid=" + std::to_wstring(sr.record.pid));
+    Logger::Info(L"подключение успешно, pid=" + std::to_wstring(sr.record.pid));
     return r;
 }
 

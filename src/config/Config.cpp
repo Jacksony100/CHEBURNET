@@ -264,33 +264,33 @@ bool SaveConfig(const std::wstring& path, const Config& config) {
 bool MigrateLegacyConfig(const std::wstring& legacyPath, const std::wstring& newPath,
                          std::wstring& detail) {
     if (::GetFileAttributesW(newPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        detail = L"new config already exists";
+    detail = L"новая конфигурация уже существует";
         return true;
     }
     const DWORD attrs = ::GetFileAttributesW(legacyPath.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
         const DWORD error = ::GetLastError();
         if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
-            detail = L"legacy config absent";
+        detail = L"старая конфигурация отсутствует";
             return true;
         }
-        detail = L"cannot query legacy config";
+        detail = L"не удалось проверить старую конфигурацию";
         return false;
     }
     if (!securefs::ValidateObject(legacyPath, securefs::ObjectKind::File, true).ok) {
-        detail = L"legacy config is unsafe";
+        detail = L"старая конфигурация небезопасна";
         return false;
     }
     const ConfigParseResult parsed = ReadAndParseConfigFile(legacyPath);
     if (!parsed.ok) {
-        detail = L"legacy config parse/validation failed";
+        detail = L"разбор или проверка старой конфигурации завершились ошибкой";
         return false;
     }
     if (!SaveConfig(newPath, parsed.config)) {
-        detail = L"cannot save migrated config";
+        detail = L"не удалось сохранить перенесённую конфигурацию";
         return false;
     }
-    detail = L"legacy config imported; source retained";
+    detail = L"старая конфигурация импортирована; исходный файл сохранён";
     return true;
 }
 
