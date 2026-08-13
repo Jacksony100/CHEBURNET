@@ -384,18 +384,29 @@ static int test_process() {
     CHECK(!ProcessManager::IsExpectedWinwsImage(L"C:\\Temp\\bin\\winws.exe", root)); // outside root
     CHECK(!ProcessManager::IsExpectedWinwsImage(L"", root));
 
-    // Record persistence round trip.
+    // Record persistence round trip. GitHub-hosted Windows runners may expose
+    // an elevated token, while local CI normally does not. Never try to turn
+    // the shared system TEMP directory itself into a protected CHEBURNET
+    // directory: create and harden a unique child first.
     wchar_t tmp[MAX_PATH];
     ::GetTempPathW(MAX_PATH, tmp);
-    std::wstring path = std::wstring(tmp) + L"cheburnet_test_rec.txt";
+    const std::wstring recordRoot = std::wstring(tmp) + L"cheburnet-process-record-" +
+                                    std::to_wstring(pid) + L"-" +
+                                    std::to_wstring(::GetTickCount64());
+    const std::wstring path = recordRoot + L"\\winws-run.txt";
+    CHECK(::CreateDirectoryW(recordRoot.c_str(), nullptr) != FALSE);
     // Protected record writes require elevation. Under the normal non-elevated
     // unit-test runner they must fail closed; an elevated run verifies roundtrip.
     if (PrivilegeManager::IsElevated()) {
-        CHECK(ProcessManager::SaveRecord(path, ok));
-        ProcessRecord loaded = ProcessManager::LoadRecord(path);
-        CHECK(loaded.pid == ok.pid);
-        CHECK(loaded.creationTime == ok.creationTime);
-        CHECK(loaded.imagePath == ok.imagePath);
+        const auto protectedRoot = securefs::EnsureProtectedDirectory(recordRoot);
+        CHECK(protectedRoot.ok);
+        if (protectedRoot.ok) {
+            CHECK(ProcessManager::SaveRecord(path, ok));
+            ProcessRecord loaded = ProcessManager::LoadRecord(path);
+            CHECK(loaded.pid == ok.pid);
+            CHECK(loaded.creationTime == ok.creationTime);
+            CHECK(loaded.imagePath == ok.imagePath);
+        }
     } else {
         CHECK(!ProcessManager::SaveRecord(path, ok));
     }
@@ -403,6 +414,7 @@ static int test_process() {
     injected.imagePath += L"\nforged=1";
     CHECK(!ProcessManager::SaveRecord(path, injected));
     ProcessManager::DeleteRecord(path);
+    CHECK(::RemoveDirectoryW(recordRoot.c_str()) != FALSE);
     return g_fail;
 }
 
