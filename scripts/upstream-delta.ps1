@@ -62,12 +62,12 @@ function Get-CheburnetPayloadDelta {
     $after = $StrategyCountAfter
     $before = $after - $result['StrategiesAdded'].Count + $result['StrategiesRemoved'].Count
     return [pscustomobject]@{
-        StrategiesAdded     = @($result['StrategiesAdded'])
-        StrategiesRemoved   = @($result['StrategiesRemoved'])
-        StrategiesModified  = @($result['StrategiesModified'])
-        PayloadAdded        = @($result['PayloadAdded'])
-        PayloadRemoved      = @($result['PayloadRemoved'])
-        PayloadModified     = @($result['PayloadModified'])
+        StrategiesAdded     = $result['StrategiesAdded'].ToArray()
+        StrategiesRemoved   = $result['StrategiesRemoved'].ToArray()
+        StrategiesModified  = $result['StrategiesModified'].ToArray()
+        PayloadAdded        = $result['PayloadAdded'].ToArray()
+        PayloadRemoved      = $result['PayloadRemoved'].ToArray()
+        PayloadModified     = $result['PayloadModified'].ToArray()
         StrategyCountAfter  = $after
         StrategyCountBefore = $before
     }
