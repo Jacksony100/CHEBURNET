@@ -1,11 +1,26 @@
-// СОЗДАНО АВТОМАТИЧЕСКИ CMake из версии project() — НЕ РЕДАКТИРОВАТЬ.
+// СОЗДАНО АВТОМАТИЧЕСКИ CMake из cmake/Version.cmake — НЕ РЕДАКТИРОВАТЬ.
 #pragma once
 
-#define CHEBURNET_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
-#define CHEBURNET_VERSION_MINOR @PROJECT_VERSION_MINOR@
-#define CHEBURNET_VERSION_PATCH @PROJECT_VERSION_PATCH@
+// Числовые компоненты. TWEAK несёт номер RC (0 для стабильного выпуска) и
+// существует только ради числового формата PE-версии.
+#define CHEBURNET_VERSION_MAJOR @CHEBURNET_VERSION_MAJOR@
+#define CHEBURNET_VERSION_MINOR @CHEBURNET_VERSION_MINOR@
+#define CHEBURNET_VERSION_PATCH @CHEBURNET_VERSION_PATCH@
+#define CHEBURNET_VERSION_TWEAK @CHEBURNET_VERSION_TWEAK@
 
-#define CHEBURNET_VERSION_QUAD @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
-#define CHEBURNET_VERSION_STR "@PROJECT_VERSION@"
-#define CHEBURNET_VERSION_RC_STR "@PROJECT_VERSION@.0"
-#define CHEBURNET_VERSION_WSTR L"@PROJECT_VERSION@"
+// PE VERSIONINFO: только числовая форма.
+#define CHEBURNET_VERSION_QUAD @CHEBURNET_VERSION_MAJOR@,@CHEBURNET_VERSION_MINOR@,@CHEBURNET_VERSION_PATCH@,@CHEBURNET_VERSION_TWEAK@
+#define CHEBURNET_VERSION_PE_STR "@CHEBURNET_VERSION_PE@"
+
+// Семантическая версия — единственное значение, по которому принимаются
+// решения об обновлении. Для RC она содержит prerelease-метку.
+#define CHEBURNET_VERSION_STR "@CHEBURNET_VERSION_SEMANTIC@"
+#define CHEBURNET_VERSION_WSTR L"@CHEBURNET_VERSION_SEMANTIC@"
+#define CHEBURNET_VERSION_CORE_STR "@CHEBURNET_VERSION_CORE@"
+#define CHEBURNET_VERSION_PRERELEASE_STR "@CHEBURNET_VERSION_PRERELEASE@"
+
+// Канал выпуска этой сборки. Стабильная сборка никогда не принимает
+// предварительные версии; RC-сборка может перейти на новый RC или на стабильный.
+#define CHEBURNET_VERSION_IS_PRERELEASE @CHEBURNET_VERSION_IS_PRERELEASE@
+#define CHEBURNET_STABLE_CHANNEL @CHEBURNET_STABLE_CHANNEL@
+#define CHEBURNET_RELEASE_CHANNEL "@CHEBURNET_RELEASE_CHANNEL@"

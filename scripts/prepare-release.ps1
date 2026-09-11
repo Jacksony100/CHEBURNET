@@ -9,24 +9,16 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
-if ($Tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?)$') {
-    throw 'release tag has unsupported syntax'
-}
-$tagVersion = $Matches[1]
+. "$PSScriptRoot\version.ps1"
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
     throw 'release repository has unsupported syntax'
 }
 
-$cmake = Get-Content -LiteralPath (Join-Path $root 'CMakeLists.txt') -Raw -Encoding UTF8
-if ($cmake -notmatch 'project\(CHEBURNET VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
-    throw 'cannot determine CHEBURNET source version'
-}
-$sourceVersion = $Matches[1]
-$escapedSourceVersion = [regex]::Escape($sourceVersion)
-if (($tagVersion -cne $sourceVersion) -and
-    ($tagVersion -notmatch "^$escapedSourceVersion-rc\.[1-9][0-9]*$")) {
-    throw "tag version $tagVersion does not match source/PE version $sourceVersion"
-}
+# The tag must exactly match the authoritative version model, channel
+# included: a stable tag cannot publish RC semantics, and vice versa.
+$version = Get-CheburnetVersion -Root $root
+$tagVersion = Assert-CheburnetReleaseTag -Tag $Tag -Version $version
+$sourceVersion = $version.Semantic
 
 $provenancePath = Join-Path $root 'resources\upstream\provenance.json'
 $payloadVersion = [string](Get-Content -LiteralPath $provenancePath -Raw -Encoding UTF8 |
@@ -65,9 +57,13 @@ if ($LASTEXITCODE -ne 0) { throw 'update manifest signing failed' }
     -Manifest $manifest -Signature $signature
 if ($LASTEXITCODE -ne 0) { throw 'update manifest signature verification failed' }
 
+$peVersion = Assert-CheburnetLauncherPeVersion -Launcher (Join-Path $out 'CHEBURNET.exe') `
+    -Version $version
+
 $payloadName = Split-Path -Leaf $payload
 $payloadHash = (Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText($payload + '.sha256', "$payloadHash  $payloadName`n",
     [Text.Encoding]::ASCII)
 Copy-Item -LiteralPath (Join-Path $root 'DEPENDENCIES.md') -Destination (Join-Path $out 'DEPENDENCIES.md') -Force
-Write-Output "RELEASE_PREPARATION: PASS tag=$Tag launcher=$sourceVersion payload=$payloadVersion"
+Write-Output ("RELEASE_PREPARATION: PASS tag=$Tag launcher=$sourceVersion pe=$peVersion " +
+              "channel=$($version.Channel) payload=$payloadVersion")

@@ -135,7 +135,11 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
         return result;
     }
     result.manifest = untrusted.manifest;
-    result.launcher = EvaluateLauncher(result.manifest, CHEBURNET_VERSION_STR, true);
+    // Канал берётся из авторитетной модели версии этой сборки, а не из
+    // константы. Стабильная сборка никогда не принимает предварительную
+    // версию; RC-сборка может перейти на новый RC или на стабильный выпуск.
+    constexpr bool kStableChannel = CHEBURNET_STABLE_CHANNEL != 0;
+    result.launcher = EvaluateLauncher(result.manifest, CHEBURNET_VERSION_STR, kStableChannel);
     const StateResult runtimeState = LoadRuntimeState(paths_.ActiveRuntimePath());
     if (!runtimeState.ok && !runtimeState.missing) {
         result.status = CheckStatus::Rejected;
@@ -147,7 +151,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
                                            ? runtimeState.state.current
                                            : str::ToUtf8(upstream::kVersion);
     result.payload = EvaluatePayload(result.manifest, currentPayload,
-                                     CHEBURNET_VERSION_STR, true);
+                                     CHEBURNET_VERSION_STR, kStableChannel);
     if (result.launcher == Eligibility::DowngradeRejected ||
         result.payload == Eligibility::DowngradeRejected ||
         result.launcher == Eligibility::PrereleaseRejected ||

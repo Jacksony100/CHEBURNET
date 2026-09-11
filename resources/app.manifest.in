@@ -3,7 +3,7 @@
   <assemblyIdentity
       type="win32"
       name="CHEBURNET.ConnectionConsole"
-      version="@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@.0"
+      version="@CHEBURNET_VERSION_PE@"
       processorArchitecture="amd64"/>
 
   <!-- CHEBURNET always requires administrator rights: winws.exe loads the

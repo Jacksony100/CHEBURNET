@@ -43,6 +43,7 @@
 #include "app/OperationState.h"
 #include "util/CommandLine.h"
 #include "util/StringUtil.h"
+#include "util/Version.h"
 
 using namespace cheburnet;
 
@@ -857,21 +858,170 @@ static int test_updatemanifest() {
     old.launcher.minimumSupportedVersion = "2.0.0";
     CHECK(update::EvaluateLauncher(old, "1.0.0", true) ==
           update::Eligibility::LauncherTooOld);
+
+    // ---- семантика RC/stable (AC-01) ---------------------------------------
+    auto rc = valid.manifest;
+    rc.launcher.minimumSupportedVersion = "1.0.0-rc.1";
+    rc.launcher.version = "1.0.0-rc.2";
+    // RC -> более новый RC: апгрейд только для сборки канала prerelease.
+    CHECK(update::EvaluateLauncher(rc, "1.0.0-rc.1", false) == update::Eligibility::Upgrade);
+    CHECK(update::EvaluateLauncher(rc, "1.0.0-rc.1", true) ==
+          update::Eligibility::PrereleaseRejected);
+    // RC -> stable обязан быть апгрейдом на любом канале. Это и есть дефект,
+    // из-за которого стабильный 1.0.0 считался «текущим» для 1.0.0-rc.3.
+    rc.launcher.version = "1.0.0";
+    CHECK(update::EvaluateLauncher(rc, "1.0.0-rc.3", true) == update::Eligibility::Upgrade);
+    CHECK(update::EvaluateLauncher(rc, "1.0.0-rc.3", false) == update::Eligibility::Upgrade);
+    CHECK(update::EvaluateLauncher(rc, "1.0.0", true) == update::Eligibility::Current);
+    // stable -> RC того же ядра остаётся понижением даже на канале prerelease.
+    rc.launcher.version = "1.0.0-rc.4";
+    CHECK(update::EvaluateLauncher(rc, "1.0.0", false) ==
+          update::Eligibility::DowngradeRejected);
+    CHECK(update::EvaluateLauncher(rc, "1.0.0", true) ==
+          update::Eligibility::PrereleaseRejected);
+    rc.launcher.version = "1.0.1";
+    CHECK(update::EvaluateLauncher(rc, "1.0.0", true) == update::Eligibility::Upgrade);
+    rc.launcher.version = "1.0.0";
+    CHECK(update::EvaluateLauncher(rc, "1.0.1", true) ==
+          update::Eligibility::DowngradeRejected);
+    rc.launcher.version = "1.1.0-rc.1";
+    CHECK(update::EvaluateLauncher(rc, "1.0.0", true) ==
+          update::Eligibility::PrereleaseRejected);
+
+    // Порог minimum_supported_version стабильного выпуска обязан включать RC
+    // той же базовой версии, иначе установленный RC отсекается как слишком старый.
+    auto floorCase = valid.manifest;
+    floorCase.launcher.version = "1.0.0";
+    floorCase.launcher.minimumSupportedVersion = "1.0.0";
+    CHECK(update::EvaluateLauncher(floorCase, "1.0.0-rc.3", true) ==
+          update::Eligibility::LauncherTooOld);
+    floorCase.launcher.minimumSupportedVersion = "1.0.0-rc.1";
+    CHECK(update::EvaluateLauncher(floorCase, "1.0.0-rc.3", true) ==
+          update::Eligibility::Upgrade);
+
+    // То же для порога полезной нагрузки.
+    auto payloadFloor = valid.manifest;
+    payloadFloor.payload.minimumLauncherVersion = "1.0.0-rc.1";
+    CHECK(update::EvaluatePayload(payloadFloor, "1.10.1", "1.0.0-rc.3", true) ==
+          update::Eligibility::Upgrade);
+    payloadFloor.payload.minimumLauncherVersion = "1.0.0";
+    CHECK(update::EvaluatePayload(payloadFloor, "1.10.1", "1.0.0-rc.3", true) ==
+          update::Eligibility::LauncherTooOld);
+
+    // Ревизия upstream (1.10.2a) — более новый выпуск, а не понижение.
+    auto revision = valid.manifest;
+    revision.payload.version = "1.10.2a";
+    CHECK(update::EvaluatePayload(revision, "1.10.2", "1.0.0", true) ==
+          update::Eligibility::Upgrade);
+    CHECK(update::EvaluatePayload(revision, "1.10.2a", "1.0.0", true) ==
+          update::Eligibility::Current);
+    CHECK(update::EvaluatePayload(revision, "1.10.2b", "1.0.0", true) ==
+          update::Eligibility::DowngradeRejected);
     return g_fail;
 }
 
 // ----------------------------------------------------------- version ordering
+static std::string ReadWholeFile(const std::wstring& path) {
+    HANDLE file = ::CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return {};
+    std::string bytes;
+    char buffer[4096];
+    DWORD read = 0;
+    while (::ReadFile(file, buffer, sizeof(buffer), &read, nullptr) && read != 0) {
+        bytes.append(buffer, read);
+    }
+    ::CloseHandle(file);
+    return bytes;
+}
+
 static int test_updateversion() {
     g_fail = 0;
-    auto a = update::ParseVersion("1.9.9a");
-    auto b = update::ParseVersion("1.10.0");
-    auto c = update::ParseVersion("v1.10.0");
-    CHECK(a && b && c);
-    CHECK(a && b && update::CompareVersions(*a, *b) < 0);
-    CHECK(b && c && update::CompareVersions(*b, *c) == 0);
-    CHECK(!update::ParseVersion("1..2"));
-    CHECK(!update::ParseVersion("1."));
-    CHECK(!update::ParseVersion("1.2/evil"));
+
+    // Сборка обязана сообщать о себе семантическую, а не только числовую
+    // версию: именно по ней обновление отличает RC от стабильного выпуска.
+    const auto selfVersion = update::ParseVersion(CHEBURNET_VERSION_STR);
+    CHECK(selfVersion.has_value());
+#if CHEBURNET_VERSION_IS_PRERELEASE
+    CHECK(selfVersion && selfVersion->prerelease);
+    CHECK(CHEBURNET_STABLE_CHANNEL == 0);
+    CHECK(std::strcmp(CHEBURNET_VERSION_STR, CHEBURNET_VERSION_CORE_STR) != 0);
+    {   // RC -> stable обязателен как Upgrade; обратное — как понижение.
+        const auto stable = update::ParseVersion(CHEBURNET_VERSION_CORE_STR);
+        CHECK(stable && selfVersion && update::CompareVersions(*selfVersion, *stable) < 0);
+    }
+#else
+    CHECK(selfVersion && !selfVersion->prerelease);
+    CHECK(CHEBURNET_STABLE_CHANNEL == 1);
+    CHECK(std::strcmp(CHEBURNET_VERSION_STR, CHEBURNET_VERSION_CORE_STR) == 0);
+#endif
+    // PE-версия остаётся чисто числовой (формат PE не выражает prerelease).
+    {
+        const std::string pe = CHEBURNET_VERSION_PE_STR;
+        int dots = 0;
+        bool numeric = !pe.empty();
+        for (const char c : pe) {
+            if (c == '.') ++dots;
+            else if (c < '0' || c > '9') numeric = false;
+        }
+        CHECK(numeric && dots == 3);
+    }
+
+    // Каноническая таблица порядка: те же случаи проверяет scripts/version.ps1
+    // через тест version_model, поэтому обе реализации не могут разойтись.
+    const std::string table = ReadWholeFile(CHEBURNET_VERSION_CASES);
+    CHECK(!table.empty());
+    json::ParseOptions options;
+    options.maxBytes = 64 * 1024;
+    options.maxValues = 4096;
+    const json::ParseResult parsed = json::Parse(table, options);
+    CHECK(parsed.ok);
+    const json::Value* cases = parsed.ok ? parsed.value.Find("cases") : nullptr;
+    const json::Value::Array* caseArray = cases ? cases->AsArray() : nullptr;
+    CHECK(caseArray && caseArray->size() >= 20);
+    if (caseArray) {
+        for (const json::Value& entry : *caseArray) {
+            const json::Value* left = entry.Find("left");
+            const json::Value* right = entry.Find("right");
+            const json::Value* expected = entry.Find("expected");
+            const std::string* leftText = left ? left->AsString() : nullptr;
+            const std::string* rightText = right ? right->AsString() : nullptr;
+            const json::Number* expectedNumber = expected ? expected->AsNumber() : nullptr;
+            const auto expectedValue = expectedNumber ? expectedNumber->AsInt64() : std::nullopt;
+            CHECK(leftText && rightText && expectedValue);
+            if (!leftText || !rightText || !expectedValue) continue;
+            const auto l = update::ParseVersion(*leftText);
+            const auto r = update::ParseVersion(*rightText);
+            if (!l || !r) {
+                ++g_fail;
+                std::printf("  FAIL unparsable ordering case: %s vs %s\n",
+                            leftText->c_str(), rightText->c_str());
+                continue;
+            }
+            const int forward = update::CompareVersions(*l, *r);
+            const int reverse = update::CompareVersions(*r, *l);
+            const int forwardSign = forward < 0 ? -1 : (forward > 0 ? 1 : 0);
+            if (forwardSign != static_cast<int>(*expectedValue) || reverse != -forward) {
+                ++g_fail;
+                std::printf("  FAIL ordering %s vs %s: got %d expected %lld (reverse %d)\n",
+                            leftText->c_str(), rightText->c_str(), forwardSign,
+                            static_cast<long long>(*expectedValue), reverse);
+            }
+        }
+    }
+    const json::Value* invalid = parsed.ok ? parsed.value.Find("invalid") : nullptr;
+    const json::Value::Array* invalidArray = invalid ? invalid->AsArray() : nullptr;
+    CHECK(invalidArray && invalidArray->size() >= 10);
+    if (invalidArray) {
+        for (const json::Value& entry : *invalidArray) {
+            const std::string* text = entry.AsString();
+            CHECK(text != nullptr);
+            if (text && update::ParseVersion(*text)) {
+                ++g_fail;
+                std::printf("  FAIL accepted invalid version: '%s'\n", text->c_str());
+            }
+        }
+    }
     return g_fail;
 }
 

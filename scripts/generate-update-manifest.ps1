@@ -4,11 +4,16 @@ param(
     [Parameter(Mandatory=$true)][string]$Payload,
     [Parameter(Mandatory=$true)][string]$BaseUrl,
     [string]$OutFile = 'dist\update-manifest.json',
-    [string]$LauncherVersion = '1.0.0',
+    [string]$LauncherVersion,
+    # Oldest launcher allowed to move to this release. The value includes RCs
+    # of the same core version, otherwise an installed 1.0.0-rc.N would get
+    # LauncherTooOld when moving to stable 1.0.0 (an rc orders below stable).
+    [string]$MinimumSupportedLauncherVersion = '1.0.0-rc.1',
     [string]$KeyId = 'cheburnet-release-2026'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\version.ps1"
 $baseUri = $null
 if (-not [Uri]::TryCreate($BaseUrl, [UriKind]::Absolute, [ref]$baseUri) -or
     $baseUri.Scheme -cne 'https' -or [string]::IsNullOrWhiteSpace($baseUri.Host) -or
@@ -44,14 +49,24 @@ foreach ($path in @($launcherPath,$payloadPath)) {
 if (-not $out.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'manifest output must be inside repository'
 }
-if ($LauncherVersion -notmatch '^\d+(?:\.\d+){1,7}(?:[-+][A-Za-z0-9.-]+)?$') {
-    throw 'invalid launcher version'
+# The manifest's semantic version comes from the authoritative version model
+# rather than from a free-form argument, so signed metadata cannot drift from
+# the build. The numeric PE version is checked separately because the PE
+# format cannot express a prerelease (1.0.0-rc.3 -> 1.0.0.3).
+$versionModel = Get-CheburnetVersion -Root $root
+if ([string]::IsNullOrEmpty($LauncherVersion)) { $LauncherVersion = $versionModel.Semantic }
+if (-not (Test-CheburnetSemanticVersion $LauncherVersion)) { throw 'invalid launcher version' }
+if ($LauncherVersion -cne $versionModel.Semantic) {
+    throw ("launcher version $LauncherVersion does not match source semantic version " +
+           "$($versionModel.Semantic)")
 }
-$versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($launcherPath)
-$expectedPeVersion = "$LauncherVersion.0"
-if ([string]$versionInfo.FileVersion -cne $expectedPeVersion -or
-    [string]$versionInfo.ProductVersion -cne $expectedPeVersion) {
-    throw "launcher PE version mismatch: expected $expectedPeVersion, file=$($versionInfo.FileVersion), product=$($versionInfo.ProductVersion)"
+Assert-CheburnetLauncherPeVersion -Launcher $launcherPath -Version $versionModel | Out-Null
+if (-not (Test-CheburnetSemanticVersion $MinimumSupportedLauncherVersion)) {
+    throw 'invalid minimum supported launcher version'
+}
+if ((Compare-CheburnetVersion $MinimumSupportedLauncherVersion $LauncherVersion) -gt 0) {
+    throw ("minimum supported launcher version $MinimumSupportedLauncherVersion is newer " +
+           "than the published launcher $LauncherVersion")
 }
 $provenance = Get-Content -LiteralPath (Join-Path $root 'resources\upstream\provenance.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -110,14 +125,14 @@ $manifest = [ordered]@{
         version=$LauncherVersion; url=($BaseUrl.TrimEnd('/') + '/CHEBURNET.exe')
         sha256=(Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256).Hash.ToLowerInvariant()
         size=[long](Get-Item -LiteralPath $launcherPath).Length
-        minimum_supported_version='1.0.0'
+        minimum_supported_version=$MinimumSupportedLauncherVersion
     }
     payload = [ordered]@{
         provider=[string]$provenance.provider; version=[string]$provenance.version
         url=($BaseUrl.TrimEnd('/') + '/' + [IO.Path]::GetFileName($payloadPath))
         sha256=(Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
         size=[long](Get-Item -LiteralPath $payloadPath).Length
-        minimum_launcher_version='1.0.0'; payload_schema=1; strategy_schema=1
+        minimum_launcher_version=$MinimumSupportedLauncherVersion; payload_schema=1; strategy_schema=1
         upstream_release_url=[string]$provenance.release_url
     }
     key_id=$KeyId

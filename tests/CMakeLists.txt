@@ -15,7 +15,8 @@ add_custom_command(
 add_custom_target(cheburnet_test_package ALL DEPENDS "${CHEBURNET_TEST_PACKAGE}")
 add_dependencies(cheburnet_tests cheburnet_test_package)
 target_compile_definitions(cheburnet_tests PRIVATE
-    CHEBURNET_TEST_PACKAGE=L"${CHEBURNET_TEST_PACKAGE}")
+    CHEBURNET_TEST_PACKAGE=L"${CHEBURNET_TEST_PACKAGE}"
+    CHEBURNET_VERSION_CASES=L"${CMAKE_CURRENT_SOURCE_DIR}/version-order-cases.json")
 
 set(CHEBURNET_TEST_NAMES
     args quoting config sha256 manifest process integrity preflight securefs loghandle animation progress mascot
@@ -47,3 +48,10 @@ add_test(NAME release_metadata
             -RepositoryRoot "${CMAKE_SOURCE_DIR}"
             -Launcher "$<TARGET_FILE:CHEBURNET>"
             -Payload "${CHEBURNET_TEST_PACKAGE}")
+
+# Скриптовая реализация модели/сравнения версий обязана совпадать с C++ на
+# одной канонической таблице (tests/version-order-cases.json).
+add_test(NAME version_model
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/version_model.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}")
