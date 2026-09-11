@@ -146,10 +146,25 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
     }
 
     // Attribute list restricting inheritance to exactly the three std handles.
+    // The sizing call must actually produce a size: if it does not, the
+    // allocation below would be zero-length and every later attribute call
+    // would write through a pointer with no storage behind it. Fail closed
+    // instead of creating an elevated child with unrestricted inheritance.
     SIZE_T attrSize = 0;
     ::InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    if (attrSize == 0 || attrSize > 64 * 1024) {
+        res.win32Error = ::GetLastError();
+        closeStd();
+        Logger::Error(L"запуск: некорректный размер списка атрибутов процесса");
+        return res;
+    }
     auto attrBuf = std::make_unique<BYTE[]>(attrSize);
     auto attrList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuf.get());
+    if (attrList == nullptr) {
+        res.win32Error = ERROR_NOT_ENOUGH_MEMORY;
+        closeStd();
+        return res;
+    }
     if (!::InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
         res.win32Error = ::GetLastError();
         closeStd();

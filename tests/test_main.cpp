@@ -7,6 +7,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
+#include <charconv>
+#include <iterator>
 #include <algorithm>
 #include <stdexcept>
 #include <string>
@@ -1180,6 +1183,357 @@ static int test_updatestate() {
 }
 
 // ---------------------------------------------------------- WinHTTP policy
+// ------------------------------------------------ property / mutation fuzzing
+//
+// Deterministic by construction: a fixed-seed xorshift PRNG mutates known-good
+// inputs, so a failure always reproduces. The property under test is uniform
+// across every parser: a mutated input is either parsed into a value that
+// satisfies the parser's own invariants, or rejected. It must never crash,
+// hang, or be accepted while violating an invariant.
+namespace {
+
+class Prng {
+public:
+    explicit Prng(std::uint64_t seed) : state_(seed ? seed : 0x9E3779B97F4A7C15ull) {}
+    std::uint64_t Next() {
+        state_ ^= state_ << 13;
+        state_ ^= state_ >> 7;
+        state_ ^= state_ << 17;
+        return state_;
+    }
+    std::size_t Below(std::size_t bound) {
+        return bound ? static_cast<std::size_t>(Next() % bound) : 0;
+    }
+
+private:
+    std::uint64_t state_;
+};
+
+// Byte-level mutations that historically break hand-written parsers.
+std::string MutateBytes(std::string input, Prng& prng) {
+    if (input.empty()) return input;
+    switch (prng.Below(7)) {
+        case 0: input[prng.Below(input.size())] = static_cast<char>(prng.Next() & 0xFF); break;
+        case 1: input.erase(prng.Below(input.size()), 1 + prng.Below(4)); break;
+        case 2: input.insert(prng.Below(input.size()), 1 + prng.Below(4),
+                             static_cast<char>(prng.Next() & 0xFF)); break;
+        case 3: input.resize(prng.Below(input.size() + 1)); break;           // truncation
+        case 4: input[prng.Below(input.size())] = '\0'; break;               // embedded NUL
+        case 5: input.insert(prng.Below(input.size()), "\xF0\x9F\x92\xA9"); break;  // 4-byte UTF-8
+        case 6: input.insert(prng.Below(input.size()), 1, '\xFF'); break;    // invalid UTF-8 lead
+        default: break;
+    }
+    return input;
+}
+
+const char* const kVersionSeeds[] = {
+    "1.0.0", "1.0.0-rc.3", "1.10.2", "1.10.2a", "v1.0.0", "1.0.0+build.7",
+    "1.0.0-rc.3+abc", "0.0.1", "9.9.9.9.9.9.9.9"
+};
+
+const char* const kPackagePathSeeds[] = {
+    "bin/winws.exe", "lists/list-general.txt", "strategies/catalog.json",
+    "provenance.json", "runtime-manifest.json", "bin/WinDivert64.sys"
+};
+
+// CI runs a fixed seed and iteration count so a failure always reproduces.
+// CHEBURNET_FUZZ_SEED / CHEBURNET_FUZZ_ITERATIONS let a maintainer run a longer
+// campaign without a separate toolchain:
+//   set CHEBURNET_FUZZ_ITERATIONS=2000000
+//   set CHEBURNET_FUZZ_SEED=12345
+//   build\tests\cheburnet_tests.exe fuzzparsers
+unsigned long long FuzzEnv(const char* name, unsigned long long fallback) {
+    const char* raw = std::getenv(name);
+    if (!raw || !*raw) return fallback;
+    unsigned long long value = 0;
+    const char* end = raw + std::strlen(raw);
+    const auto parsed = std::from_chars(raw, end, value);
+    if (parsed.ec != std::errc{} || parsed.ptr != end || value == 0) return fallback;
+    return value;
+}
+
+} // namespace
+
+static int test_fuzzparsers() {
+    g_fail = 0;
+    const int kIterations = static_cast<int>(FuzzEnv("CHEBURNET_FUZZ_ITERATIONS", 4000));
+    const std::uint64_t fuzzSeed = FuzzEnv("CHEBURNET_FUZZ_SEED", 0xC4EB2026ull);
+    std::printf("  fuzz seed=%llu iterations=%d\n", static_cast<unsigned long long>(fuzzSeed),
+                kIterations);
+    Prng prng(fuzzSeed);
+
+    // ---- version parser ----------------------------------------------------
+    for (int i = 0; i < kIterations; ++i) {
+        const std::string seed = kVersionSeeds[prng.Below(std::size(kVersionSeeds))];
+        const std::string mutated = MutateBytes(seed, prng);
+        const auto parsed = update::ParseVersion(mutated);
+        if (!parsed) continue;
+        // Accepted: the invariants the comparator relies on must hold.
+        if (parsed->parts.empty() || parsed->parts.size() > 8) {
+            ++g_fail;
+            std::printf("  FAIL version invariant (parts) for '%s'\n", mutated.c_str());
+            continue;
+        }
+        if (parsed->prerelease && parsed->prereleaseIds.empty()) {
+            ++g_fail;
+            std::printf("  FAIL version invariant (prerelease ids) for '%s'\n", mutated.c_str());
+            continue;
+        }
+        if (parsed->revision.size() > 1) {
+            ++g_fail;
+            std::printf("  FAIL version invariant (revision) for '%s'\n", mutated.c_str());
+            continue;
+        }
+        // Comparison must be a strict, antisymmetric, reflexive order.
+        if (update::CompareVersions(*parsed, *parsed) != 0) {
+            ++g_fail;
+            std::printf("  FAIL version not reflexive for '%s'\n", mutated.c_str());
+            continue;
+        }
+        const auto other = update::ParseVersion(kVersionSeeds[prng.Below(std::size(kVersionSeeds))]);
+        if (other) {
+            const int forward = update::CompareVersions(*parsed, *other);
+            const int reverse = update::CompareVersions(*other, *parsed);
+            if ((forward == 0) != (reverse == 0) || (forward < 0) != (reverse > 0)) {
+                ++g_fail;
+                std::printf("  FAIL version not antisymmetric for '%s'\n", mutated.c_str());
+            }
+        }
+    }
+
+    // ---- update manifest ---------------------------------------------------
+    const std::string manifestSeed = ValidManifest();
+    for (int i = 0; i < kIterations; ++i) {
+        const std::string mutated = MutateBytes(manifestSeed, prng);
+        const update::ManifestResult parsed = update::ParseManifest(mutated);
+        if (!parsed.ok) continue;
+        const update::Manifest& manifest = parsed.manifest;
+        // Accepted manifests must still satisfy every contract the updater
+        // relies on before it will touch the network or the filesystem.
+        const bool contract =
+            manifest.schema == 1 && manifest.channel == "stable" &&
+            manifest.launcher.sha256.size() == 64 && manifest.payload.sha256.size() == 64 &&
+            manifest.launcher.size > 0 && manifest.payload.size > 0 &&
+            update::IsHttpsUrl(manifest.launcher.url) &&
+            update::IsHttpsUrl(manifest.payload.url) &&
+            update::IsHttpsUrl(manifest.payload.upstreamReleaseUrl) &&
+            manifest.payload.provider == "Flowseal/zapret-discord-youtube" &&
+            update::ParseVersion(manifest.launcher.version).has_value() &&
+            update::ParseVersion(manifest.payload.version).has_value() &&
+            !manifest.keyId.empty();
+        if (!contract) {
+            ++g_fail;
+            std::printf("  FAIL manifest accepted while violating its contract (iteration %d)\n", i);
+        }
+    }
+
+    // ---- strict JSON -------------------------------------------------------
+    const std::string jsonSeed =
+        "{\"a\":1,\"b\":[true,false,null,1.5e3],\"c\":{\"d\":\"\\u0416\"}}";
+    for (int i = 0; i < kIterations; ++i) {
+        const std::string mutated = MutateBytes(jsonSeed, prng);
+        json::ParseOptions options;
+        options.maxBytes = 4096;
+        options.maxDepth = 8;
+        options.maxValues = 128;
+        const json::ParseResult parsed = json::Parse(mutated, options);
+        if (parsed.ok && mutated.size() > options.maxBytes) {
+            ++g_fail;
+            std::printf("  FAIL json accepted an oversized document (iteration %d)\n", i);
+        }
+    }
+
+    // ---- package path allowlist -------------------------------------------
+    for (int i = 0; i < kIterations; ++i) {
+        const std::string seed = kPackagePathSeeds[prng.Below(std::size(kPackagePathSeeds))];
+        const std::string mutated = MutateBytes(seed, prng);
+        std::string normalized;
+        if (!update::NormalizePackagePath(mutated, normalized)) continue;
+        // Accepted: the normalized path must be inside the exact allowlist,
+        // relative and free of traversal. Note that ".." only means traversal
+        // as a COMPLETE component: "WinDivert64.s..ys" is an ordinary name.
+        const bool allowed = normalized.rfind("bin/", 0) == 0 ||
+                             normalized.rfind("lists/", 0) == 0 ||
+                             normalized == "strategies/catalog.json" ||
+                             normalized == "provenance.json" ||
+                             normalized == "runtime-manifest.json";
+        bool traversal = false;
+        std::size_t at = 0;
+        while (at <= normalized.size()) {
+            const std::size_t slash = normalized.find('/', at);
+            const std::string_view component = std::string_view(normalized).substr(
+                at, slash == std::string::npos ? std::string_view::npos : slash - at);
+            if (component.empty() || component == "." || component == "..") traversal = true;
+            if (slash == std::string::npos) break;
+            at = slash + 1;
+        }
+        const bool safe = allowed && !traversal &&
+                          normalized.find('\\') == std::string::npos &&
+                          normalized.find(':') == std::string::npos &&
+                          normalized.find('\0') == std::string::npos &&
+                          !normalized.empty() && normalized.front() != '/';
+        if (!safe) {
+            ++g_fail;
+            std::printf("  FAIL package path accepted unsafe normalization: '%s'\n",
+                        normalized.c_str());
+        }
+    }
+
+    // Explicit traversal and device-name forms must always be rejected.
+    for (const char* hostile : {"../bin/winws.exe", "bin/../../evil", "bin/./winws.exe",
+                                "/bin/winws.exe", "bin\\winws.exe", "C:/bin/winws.exe",
+                                "bin/", "", "bin/con.exe", "bin/winws.exe ", "bin/winws.exe.",
+                                "bin/..", "bin/nul", "lists/../../../etc/passwd"}) {
+        std::string normalized;
+        if (update::NormalizePackagePath(hostile, normalized)) {
+            ++g_fail;
+            std::printf("  FAIL package path accepted a hostile input: '%s'\n", hostile);
+        }
+    }
+
+    // ---- staging file names ------------------------------------------------
+    const wchar_t* const stagingSeeds[] = {L"CHEBURNET-new.exe", L"engine-1.10.2.cbpkg"};
+    for (int i = 0; i < kIterations; ++i) {
+        std::wstring seed = stagingSeeds[prng.Below(std::size(stagingSeeds))];
+        switch (prng.Below(5)) {
+            case 0: seed[prng.Below(seed.size())] = static_cast<wchar_t>(prng.Next() & 0xFFFF); break;
+            case 1: seed.insert(prng.Below(seed.size()), 1, L'\\'); break;
+            case 2: seed.insert(prng.Below(seed.size()), 1, L'.'); break;
+            case 3: seed.resize(prng.Below(seed.size() + 1)); break;
+            case 4: seed.insert(prng.Below(seed.size() + 1), 1, L' '); break;
+            default: break;
+        }
+        if (!update::IsSafeStagingFileName(seed)) continue;
+        const bool safe = !seed.empty() && seed.size() <= 128 && seed.front() != L'.' &&
+                          seed.back() != L'.' && seed.back() != L' ' &&
+                          seed.find(L'\\') == std::wstring::npos &&
+                          seed.find(L'/') == std::wstring::npos &&
+                          seed.find(L':') == std::wstring::npos;
+        if (!safe) {
+            ++g_fail;
+            std::printf("  FAIL staging name accepted an unsafe value\n");
+        }
+    }
+    return g_fail;
+}
+
+// ------------------------------------------------------- fault injection grid
+//
+// The transactional activation already exposes hooks for every boundary. This
+// walks the whole failure grid and asserts the one invariant that matters: a
+// runtime is only ever "current" if the whole transaction committed, and any
+// failure leaves or restores a known-good runtime.
+static int test_faultinjection() {
+    g_fail = 0;
+    using update::ActivationStatus;
+
+    enum class FailAt { None, Preflight, Stop, StartCandidate, HealthCandidate, Commit,
+                        StartPrevious, HealthPrevious };
+    const FailAt points[] = {FailAt::None, FailAt::Preflight, FailAt::Stop,
+                             FailAt::StartCandidate, FailAt::HealthCandidate, FailAt::Commit,
+                             FailAt::StartPrevious, FailAt::HealthPrevious};
+
+    for (const FailAt point : points) {
+        for (const bool hasPrevious : {true, false}) {
+            const update::RuntimeState before{"1.10.1", hasPrevious ? "1.10.0" : ""};
+            std::vector<std::string> calls;
+            bool committed = false;
+            update::RuntimeState committedState;
+
+            update::ActivationHooks hooks;
+            hooks.preflight = [&](std::string_view version) {
+                calls.push_back("preflight:" + std::string(version));
+                return point != FailAt::Preflight;
+            };
+            hooks.stopCurrent = [&]() {
+                calls.push_back("stop");
+                return point != FailAt::Stop;
+            };
+            hooks.start = [&](std::string_view version) {
+                calls.push_back("start:" + std::string(version));
+                if (version == "1.10.2") return point != FailAt::StartCandidate;
+                return point != FailAt::StartPrevious;
+            };
+            hooks.health = [&](std::string_view version) {
+                calls.push_back("health:" + std::string(version));
+                if (version == "1.10.2") return point != FailAt::HealthCandidate;
+                return point != FailAt::HealthPrevious;
+            };
+            hooks.commit = [&](const update::RuntimeState& state) {
+                calls.push_back("commit");
+                if (point == FailAt::Commit) return false;
+                committed = true;
+                committedState = state;
+                return true;
+            };
+
+            const update::ActivationResult activated =
+                update::ActivateRuntime(before, "1.10.2", hooks);
+
+            const bool isActivated = activated.status == ActivationStatus::Activated;
+            // 1. The candidate becomes current only on a full commit.
+            if ((activated.state.current == "1.10.2") != isActivated) {
+                ++g_fail;
+                std::printf("  FAIL candidate became current without committing (point %d)\n",
+                            static_cast<int>(point));
+            }
+            if (isActivated != committed) {
+                ++g_fail;
+                std::printf("  FAIL commit flag disagrees with status (point %d)\n",
+                            static_cast<int>(point));
+            }
+            // 2. Any failure leaves or restores the previous known-good runtime.
+            if (!isActivated && activated.status != ActivationStatus::RollbackFailed &&
+                activated.state.current != before.current) {
+                ++g_fail;
+                std::printf("  FAIL failure did not restore the known-good runtime (point %d)\n",
+                            static_cast<int>(point));
+            }
+            // 3. Commit is never reached after a failed candidate start/health.
+            const bool commitCalled =
+                std::find(calls.begin(), calls.end(), std::string("commit")) != calls.end();
+            if ((point == FailAt::StartCandidate || point == FailAt::HealthCandidate ||
+                 point == FailAt::Preflight || point == FailAt::Stop) && commitCalled) {
+                ++g_fail;
+                std::printf("  FAIL commit reached after an earlier failure (point %d)\n",
+                            static_cast<int>(point));
+            }
+            // 4. Nothing is stopped before preflight approves the candidate.
+            if (point == FailAt::Preflight &&
+                std::find(calls.begin(), calls.end(), std::string("stop")) != calls.end()) {
+                ++g_fail;
+                std::printf("  FAIL the running process was stopped before preflight passed\n");
+            }
+            // 5. Rollback never starts the candidate a second time.
+            if (!isActivated) {
+                const std::size_t candidateStarts = static_cast<std::size_t>(
+                    std::count(calls.begin(), calls.end(), std::string("start:1.10.2")));
+                if (candidateStarts > 1) {
+                    ++g_fail;
+                    std::printf("  FAIL rollback restarted the candidate (point %d)\n",
+                                static_cast<int>(point));
+                }
+            }
+            // 6. Committed state always records the runtime being replaced.
+            if (isActivated && committedState.previousKnownGood != before.current) {
+                ++g_fail;
+                std::printf("  FAIL commit lost the previous known-good runtime\n");
+            }
+        }
+    }
+
+    // A missing hook must be treated as a failure, never as success.
+    {
+        const update::RuntimeState before{"1.10.1", "1.10.0"};
+        update::ActivationHooks empty;
+        const update::ActivationResult activated =
+            update::ActivateRuntime(before, "1.10.2", empty);
+        CHECK(activated.status == ActivationStatus::PreflightFailed);
+        CHECK(activated.state.current == "1.10.1");
+    }
+    return g_fail;
+}
+
 // ------------------------------------------ asynchronous update-check service
 //
 // Deterministic by construction: the fake check blocks on a flag the test
@@ -1423,6 +1777,8 @@ int wmain(int argc, wchar_t** argv) {
         {L"updatestate", test_updatestate},
         {L"updatehttp", test_updatehttp},
         {L"updatecheckservice", test_updatecheckservice},
+        {L"fuzzparsers", test_fuzzparsers},
+        {L"faultinjection", test_faultinjection},
     };
 
     int failures = 0;

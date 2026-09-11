@@ -220,9 +220,12 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
     }
 
     // ---- Phase 2: PAYLOAD ----
+    // Пустой встроенный resource manifest — ошибка генерации, а не состояние
+    // времени выполнения, поэтому проверка вынесена на этап компиляции: так
+    // сборка падает сразу, а не у пользователя при запуске (MSVC /analyze C6326).
+    static_assert(kEmbeddedResourceCount > 0,
+                  "embedded resource manifest must not be empty");
     started(5);
-    if (kEmbeddedResourceCount <= 0)
-        return fail(5, L"Пустой resource manifest.", L"Встроенные ресурсы отсутствуют.");
     okcp(5);
     started(6);
     ExtractionResult ex = extractor.EnsureExtracted();

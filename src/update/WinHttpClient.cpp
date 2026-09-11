@@ -160,7 +160,11 @@ HttpResult WinHttpClient::Get(std::wstring_view initialUrl, const HttpOptions& o
             return result;
         }
         result.body.clear();
-        std::array<unsigned char, 64 * 1024> buffer{};
+        // Heap, not stack: a 64 KiB automatic buffer put ~66 KB on a single
+        // frame (MSVC /analyze C6262). This function also runs on the
+        // background update-check thread, so the transfer buffer must not
+        // depend on how much stack that thread happens to have.
+        std::vector<unsigned char> buffer(64 * 1024, 0);
         std::uint64_t total = 0;
         for (;;) {
             if (Cancelled(options)) { result.status = HttpStatus::Cancelled; return result; }

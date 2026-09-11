@@ -158,6 +158,27 @@ target_link_libraries(cheburnet_lib PUBLIC bcrypt crypt32 winhttp advapi32 shell
 # Warnings / hardening for our own code.
 set(CHEBURNET_WARN /W4 /WX /permissive- /utf-8)
 set(CHEBURNET_HARDEN /guard:cf)
+
+# Статический анализ MSVC. Выключен по умолчанию: он заметно замедляет сборку и
+# не должен мешать обычной разработке. Включается отдельным заданием CI
+# (см. .github/workflows/codeql.yml) и локально:
+#   cmake -S . -B build-analyze -DCHEBURNET_ENABLE_ANALYZE=ON
+# Находки разбираются, а не подавляются: список отключённых предупреждений
+# ведётся здесь с обоснованием каждого.
+option(CHEBURNET_ENABLE_ANALYZE "Enable MSVC /analyze static analysis" OFF)
+if(CHEBURNET_ENABLE_ANALYZE)
+    # /analyze:external- не анализирует заголовки Windows SDK: их находки не
+    # наши и тонут в шуме.
+    #
+    # C28285 подавляется точечно и с обоснованием: это дефект SAL-аннотации
+    # CryptStringToBinaryA в самом wincrypt.h Windows SDK 10.0.26100.0
+    # ("синтаксическая ошибка _Param_(1)"). Он относится к чужому заголовку,
+    # исправить его на нашей стороне невозможно, и он не указывает ни на какое
+    # свойство кода CHEBURNET. Никакие другие предупреждения анализа не
+    # подавляются: все находки в нашем коде разобраны и исправлены.
+    list(APPEND CHEBURNET_WARN /analyze /analyze:external- /wd28285)
+    message(STATUS "CHEBURNET: статический анализ MSVC включён")
+endif()
 target_compile_options(cheburnet_lib PRIVATE ${CHEBURNET_WARN})
 target_compile_options(cheburnet_lib PUBLIC ${CHEBURNET_HARDEN}
     $<$<CONFIG:Release>:/O2 /Zi>)
