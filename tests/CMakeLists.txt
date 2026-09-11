@@ -23,7 +23,7 @@ set(CHEBURNET_TEST_NAMES
     layout checkpoints menu effects theme framebuffer configmigration)
 list(APPEND CHEBURNET_TEST_NAMES
     jsonstrict updatemanifest updateversion updatesignature updatepackage updaterollback updatestate
-    updatehttp updatecheckservice operationstate fuzzparsers faultinjection)
+    updatehttp updatecheckservice operationstate fuzzparsers faultinjection diagnostics)
 
 foreach(t ${CHEBURNET_TEST_NAMES})
     add_test(NAME ${t} COMMAND cheburnet_tests ${t})

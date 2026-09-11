@@ -36,6 +36,9 @@ public:
     int  IndexForHotkey(wchar_t ch) const; // enabled item index or -1
     const MenuItem& SelectedItem() const { return items_[static_cast<size_t>(sel_)]; }
     bool Empty() const { return items_.empty(); }
+    // Число пунктов: вызывающий код выводит из него разметку вместо того, чтобы
+    // дублировать число в константе, которую забывают обновить.
+    std::size_t Count() const { return items_.size(); }
 
     // Renders the list; selected enabled row is inverse-highlighted, disabled
     // rows muted. Returns the height used.

@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 
+#include "Diagnostics.h"
 #include "../console/Mascot.h"
 #include "../core/IntegrityVerifier.h"
 #include "../core/PrivilegeManager.h"
@@ -617,6 +618,8 @@ void App::ScreenMainMenu() {
         items.push_back({L"Состояние системы", L"Права, ОС, службы, конфликты, пути", true, L'v'});
         items.push_back({L"Проверить обновления", L"HTTPS + подписанный ECDSA P-256 манифест", true, L'u'});
         items.push_back({L"Диагностика", L"Проверка компонентов, процесса и служб", true, L'd'});
+        items.push_back({L"Экспорт диагностики",
+                         L"Локальный архив для поддержки; ничего не отправляется", true, L'e'});
         items.push_back({L"Журнал событий", L"Просмотр cheburnet.log с фильтром уровней", true, L'l'});
         items.push_back({L"Настройки", L"Политика обновлений и пользовательские параметры", true, L's'});
         items.push_back({L"Обслуживание среды", L"Удалить старые версии рабочей среды", true, L'm'});
@@ -713,9 +716,10 @@ void App::ScreenMainMenu() {
             }
             case 5: ScreenUpdates(); break;
             case 6: ScreenDiagnostics(); break;
-            case 7: ScreenLogs(); break;
-            case 8: ScreenSettings(); break;
-            case 9: {
+            case 7: ScreenDiagnosticsExport(); break;
+            case 8: ScreenLogs(); break;
+            case 9: ScreenSettings(); break;
+            case 10: {
                 if (Confirm(L"Удалить старые версии рабочей среды (текущая сохранится)?")) {
                     const AppOperationState prior = operationState_.Get();
                     if ((prior != AppOperationState::Disconnected &&
@@ -733,8 +737,8 @@ void App::ScreenMainMenu() {
                 }
                 break;
             }
-            case 10: ScreenAbout(); break;
-            case 11: return true;
+            case 11: ScreenAbout(); break;
+            case 12: return true;
             default: break;
         }
         return false;
@@ -765,7 +769,10 @@ void App::ScreenMainMenu() {
             const int menuW = std::min(ui_->Width() - 4, 40);
             const int menuX = 4;
             const int menuY = 5;
-            fb.Box(menuX, menuY - 1, menuW, static_cast<int>(13) + 2, th.Attr(UiColor::PrimaryDim),
+            // Высота выводится из фактического числа пунктов, а не из зашитой
+            // константы: добавление пункта больше не требует правки разметки.
+            const int menuRows = static_cast<int>(menu.Count());
+            fb.Box(menuX, menuY - 1, menuW, menuRows + 3, th.Attr(UiColor::PrimaryDim),
                    th.G(), L" КОМАНДНЫЙ ЦЕНТР ", th.Attr(UiColor::Primary));
             menu.Render(fb, th, menuX + 1, menuY, menuW - 2);
 
@@ -776,7 +783,7 @@ void App::ScreenMainMenu() {
                 fb.PutText(descX, menuY + 2, menu.SelectedItem().description, th.Attr(UiColor::Muted));
             }
 
-            DrawIdleMascot(menuY + 14, ui_->Height() - 4);
+            DrawIdleMascot(menuY + menuRows + 3, ui_->Height() - 4);
             DrawFooter(L"↑ ↓ выбор   Ввод — подтвердить   Esc — выход   буква — быстрый выбор");
         }
         ui_->Present();
@@ -927,6 +934,39 @@ void App::ScreenStrategy() {
 }
 
 // ==================================================== DIAGNOSTICS SCREEN ======
+// Экспорт диагностики: только по явному действию, только локально и только
+// после того, как пользователю показан состав архива и путь записи.
+void App::ScreenDiagnosticsExport() {
+    const diag::Bundle bundle = diag::BuildBundle(paths_, config_);
+    const std::wstring fileName = diag::SuggestedFileName();
+    const std::wstring target = paths_.LogsDir() + L"\\" + fileName;
+
+    std::wstring body = bundle.preview;
+    body += L"\n\nФайл будет создан здесь:\n  " + target;
+    ShowMessage(L"ЭКСПОРТ ДИАГНОСТИКИ", body, UiColor::Primary, L"Enter — далее");
+    if (!Confirm(L"Создать архив диагностики в указанном файле?")) {
+        ShowMessage(L"ОТМЕНЕНО", L"Архив не создан. Ничего не записано и не отправлено.",
+                    UiColor::Muted);
+        return;
+    }
+    std::wstring error;
+    if (!RuntimePaths::EnsureDir(paths_.LogsDir()) ||
+        !diag::WriteZipArchive(target, bundle.entries, error)) {
+        ShowMessage(L"ОШИБКА ЭКСПОРТА",
+                    (error.empty() ? std::wstring(L"Не удалось создать архив.") : error) +
+                        L"\nПуть: " + target,
+                    UiColor::Error);
+        Logger::Warn(L"экспорт диагностики не удался: " + error);
+        return;
+    }
+    Logger::Info(L"диагностика экспортирована локально: " + fileName);
+    ShowMessage(L"ГОТОВО",
+                L"Архив создан локально:\n  " + target +
+                    L"\n\nСостав описан внутри архива в manifest.json."
+                    L"\nCHEBURNET никуда его не отправляет.",
+                UiColor::Primary);
+}
+
 void App::ScreenDiagnostics() {
     struct Row { std::wstring text; ui::Severity sev; };
     std::vector<Row> rows;

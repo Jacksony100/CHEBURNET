@@ -143,6 +143,7 @@ set(LIB_SOURCES
     src/ui/Effects.cpp
     src/ui/Widgets.cpp
     src/ui/Watchdog.cpp
+    src/app/Diagnostics.cpp
     src/app/UiScreens.cpp
     src/app/App.cpp
 )
@@ -153,7 +154,7 @@ target_include_directories(cheburnet_lib PUBLIC
     "${GEN_DIR}")
 target_compile_definitions(cheburnet_lib PUBLIC
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(cheburnet_lib PUBLIC bcrypt crypt32 winhttp advapi32 shell32 ole32 user32)
+target_link_libraries(cheburnet_lib PUBLIC bcrypt crypt32 winhttp advapi32 shell32 ole32 user32 wintrust)
 
 # Warnings / hardening for our own code.
 set(CHEBURNET_WARN /W4 /WX /permissive- /utf-8)
@@ -161,7 +162,7 @@ set(CHEBURNET_HARDEN /guard:cf)
 
 # Статический анализ MSVC. Выключен по умолчанию: он заметно замедляет сборку и
 # не должен мешать обычной разработке. Включается отдельным заданием CI
-# (см. .github/workflows/codeql.yml) и локально:
+# (см. .github/workflows/static-analysis.yml) и локально:
 #   cmake -S . -B build-analyze -DCHEBURNET_ENABLE_ANALYZE=ON
 # Находки разбираются, а не подавляются: список отключённых предупреждений
 # ведётся здесь с обоснованием каждого.
