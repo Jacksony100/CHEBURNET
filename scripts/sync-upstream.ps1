@@ -191,7 +191,7 @@ try {
     # missing file instead of on the imported payload. tests/importer_validation_tree.ps1
     # keeps this list and the release gates from drifting apart again.
     foreach ($name in @('CMakeLists.txt','cmake','src','tests','scripts','resources','docs',
-                         'LICENSES','LICENSE','THIRD_PARTY_NOTICES.md','README.md',
+                         '.github','LICENSES','LICENSE','THIRD_PARTY_NOTICES.md','README.md',
                          'SECURITY.md','CHANGELOG.md','DEPENDENCIES.md','CONTRIBUTING.md')) {
         $sourceItem = Join-Path $root $name
         if (Test-Path -LiteralPath $sourceItem) {

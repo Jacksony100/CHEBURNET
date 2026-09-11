@@ -49,6 +49,12 @@ add_test(NAME release_metadata
             -Launcher "$<TARGET_FILE:CHEBURNET>"
             -Payload "${CHEBURNET_TEST_PACKAGE}")
 
+# Стабильный выпуск не может быть опубликован без действительной подписи.
+add_test(NAME release_signing
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/release_signing.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}")
+
 # Изолированное дерево проверки импортёра обязано удовлетворять тем же
 # релизным шлюзам, что и сам репозиторий.
 add_test(NAME importer_validation_tree
