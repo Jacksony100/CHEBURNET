@@ -185,8 +185,14 @@ try {
     # GameFilter mode before production files can be replaced.
     $validationRoot = Join-Path $candidate 'validation-repo'
     New-Item -ItemType Directory -Path $validationRoot | Out-Null
-    foreach ($name in @('CMakeLists.txt','cmake','src','tests','scripts','resources','LICENSES',
-                         'LICENSE','THIRD_PARTY_NOTICES.md','README.md')) {
+    # The isolated tree must contain everything the release gates read, not just
+    # what the compiler needs. docs/ and SECURITY.md are required by
+    # validate-licenses.ps1; omitting them made candidate validation fail on a
+    # missing file instead of on the imported payload. tests/importer_validation_tree.ps1
+    # keeps this list and the release gates from drifting apart again.
+    foreach ($name in @('CMakeLists.txt','cmake','src','tests','scripts','resources','docs',
+                         'LICENSES','LICENSE','THIRD_PARTY_NOTICES.md','README.md',
+                         'SECURITY.md','CHANGELOG.md','DEPENDENCIES.md','CONTRIBUTING.md')) {
         $sourceItem = Join-Path $root $name
         if (Test-Path -LiteralPath $sourceItem) {
             Copy-Item -LiteralPath $sourceItem -Destination (Join-Path $validationRoot $name) -Recurse
