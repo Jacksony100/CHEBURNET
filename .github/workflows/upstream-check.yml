@@ -40,7 +40,9 @@ jobs:
           $report = Get-Content upstream\report.json -Raw | ConvertFrom-Json
           "status=$($report.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$($report.latest_version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          if ($report.status -eq 'error') { throw "проверка исходного выпуска не удалась: $($report.error)" }
+          # ASCII only inside an inline PowerShell block: the runner writes it to a
+          # .ps1 that Windows PowerShell 5.1 reads as ANSI, so non-ASCII breaks parsing.
+          if ($report.status -eq 'error') { throw "upstream release check failed: $($report.error)" }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: upstream-detect
