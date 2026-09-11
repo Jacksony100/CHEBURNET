@@ -47,6 +47,7 @@
 #include "core/SecureFs.h"
 #include "app/OperationState.h"
 #include "app/Diagnostics.h"
+#include "app/RuntimeRecovery.h"
 #include "util/CommandLine.h"
 #include "util/StringUtil.h"
 #include "util/Version.h"
@@ -1184,6 +1185,76 @@ static int test_updatestate() {
 }
 
 // ---------------------------------------------------------- WinHTTP policy
+// ------------------------------------------------------ startup recovery grid
+//
+// These decisions used to live inside App's constructor, tangled with real
+// processes and ProgramData, so they could only be exercised by running the
+// whole elevated program. As pure functions the whole table is checkable here.
+static int test_runtimerecovery() {
+    g_fail = 0;
+    const std::wstring pendingExe = L"C:\\ProgramData\\CHEBURNET\\runtime\\1.10.3\\bin\\winws.exe";
+    const std::wstring currentExe = L"C:\\ProgramData\\CHEBURNET\\runtime\\1.10.2\\bin\\winws.exe";
+    const std::wstring foreignExe = L"C:\\Temp\\winws.exe";
+
+    // No pending state: nothing to recover, whatever is running.
+    CHECK(DecidePendingRecovery(false, false, L"", pendingExe, currentExe) ==
+          PendingAction::None);
+    CHECK(DecidePendingRecovery(false, true, pendingExe, pendingExe, currentExe) ==
+          PendingAction::None);
+
+    // Pending state, nothing verifiably running: just clear it.
+    CHECK(DecidePendingRecovery(true, false, L"", pendingExe, currentExe) ==
+          PendingAction::ClearPendingOnly);
+    // An invalid record must not be trusted even if it carries a path.
+    CHECK(DecidePendingRecovery(true, false, foreignExe, pendingExe, currentExe) ==
+          PendingAction::ClearPendingOnly);
+
+    // The pending runtime is the one running: stop it, then clear. It is never
+    // promoted to current.
+    CHECK(DecidePendingRecovery(true, true, pendingExe, pendingExe, currentExe) ==
+          PendingAction::StopPendingRuntimeThenClear);
+    // Path comparison is case-insensitive, like the filesystem.
+    CHECK(DecidePendingRecovery(true, true,
+                                L"C:\\PROGRAMDATA\\CHEBURNET\\RUNTIME\\1.10.3\\BIN\\WINWS.EXE",
+                                pendingExe, currentExe) ==
+          PendingAction::StopPendingRuntimeThenClear);
+
+    // The current runtime is running: the interrupted update never took effect.
+    CHECK(DecidePendingRecovery(true, true, currentExe, pendingExe, currentExe) ==
+          PendingAction::ClearPendingOnly);
+
+    // Something else is running: refuse rather than silently reconcile.
+    CHECK(DecidePendingRecovery(true, true, foreignExe, pendingExe, currentExe) ==
+          PendingAction::RefuseUnknownRuntime);
+    CHECK(DecidePendingRecovery(true, true, L"", pendingExe, currentExe) ==
+          PendingAction::RefuseUnknownRuntime);
+    // A path that merely starts the same must not be accepted as a match.
+    CHECK(DecidePendingRecovery(true, true, pendingExe + L".old", pendingExe, currentExe) ==
+          PendingAction::RefuseUnknownRuntime);
+
+    // ---- integrity decisions ----------------------------------------------
+    // The embedded version always wins, regardless of stored state.
+    for (const bool verified : {true, false}) {
+        for (const bool haveState : {true, false}) {
+            for (const bool havePrevious : {true, false}) {
+                CHECK(DecideIntegrityRecovery(true, verified, haveState, havePrevious) ==
+                      IntegrityAction::UseEmbedded);
+            }
+        }
+    }
+    // A verified installed runtime is used as is.
+    CHECK(DecideIntegrityRecovery(false, true, true, true) == IntegrityAction::UseInstalled);
+    CHECK(DecideIntegrityRecovery(false, true, false, false) == IntegrityAction::UseInstalled);
+    // A broken runtime rolls back only when a previous known-good version is
+    // recorded in trusted state; otherwise startup is refused.
+    CHECK(DecideIntegrityRecovery(false, false, true, true) ==
+          IntegrityAction::RollbackToPrevious);
+    CHECK(DecideIntegrityRecovery(false, false, true, false) == IntegrityAction::Refuse);
+    CHECK(DecideIntegrityRecovery(false, false, false, true) == IntegrityAction::Refuse);
+    CHECK(DecideIntegrityRecovery(false, false, false, false) == IntegrityAction::Refuse);
+    return g_fail;
+}
+
 // -------------------------------------------------------- diagnostics export
 static int test_diagnostics() {
     g_fail = 0;
@@ -1912,6 +1983,7 @@ int wmain(int argc, wchar_t** argv) {
         {L"fuzzparsers", test_fuzzparsers},
         {L"faultinjection", test_faultinjection},
         {L"diagnostics", test_diagnostics},
+        {L"runtimerecovery", test_runtimerecovery},
     };
 
     int failures = 0;

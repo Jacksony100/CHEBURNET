@@ -66,6 +66,7 @@ $checkService = Read-Source 'src\update\UpdateCheckService.cpp'
 $checkServiceHeader = Read-Source 'src\update\UpdateCheckService.h'
 $diagnostics = Read-Source 'src\app\Diagnostics.cpp'
 $diagnosticsHeader = Read-Source 'src\app\Diagnostics.h'
+$recovery = Read-Source 'src\app\RuntimeRecovery.cpp'
 $authenticodeSign = Read-Source 'scripts\authenticode-sign.ps1'
 $releaseWorkflow = Read-Source '.github\workflows\release.yml'
 
@@ -124,6 +125,12 @@ Require-Match 'UPDATE downloads remain bound to authenticated manifest' $manager
     'SameArtifact[\s\S]*DownloadVerified[\s\S]*g_verifiedManifestCache'
 Require-Match 'UPDATE interrupted pending process is identity-verified and stopped' $app `
     'pendingPaths[\s\S]*recovery\.Record\(\)[\s\S]*pendingPaths\.WinwsExePath\(\)[\s\S]*recovery\.Stop\(\)[\s\S]*interrupted-pending-rolled-back'
+Require-Match 'UPDATE startup recovery decides before it acts' ($app + $recovery) `
+    'DecidePendingRecovery\([\s\S]*RefuseUnknownRuntime[\s\S]*StopPendingRuntimeThenClear'
+Require-Match 'UPDATE a pending runtime is never promoted to current' $recovery `
+    'IEqualsAscii\(runningImagePath, pendingWinwsPath\)[\s\S]*StopPendingRuntimeThenClear[\s\S]*RefuseUnknownRuntime'
+Require-Match 'UPDATE a broken runtime rolls back only to a recorded known-good version' $recovery `
+    'haveTrustedState \|\| !havePreviousKnownGood[\s\S]*IntegrityAction::Refuse[\s\S]*RollbackToPrevious'
 Require-Match 'UPDATE/connect/cleanup declare explicit serialized states' $operationState `
     'Disconnected[\s\S]*Connecting[\s\S]*Connected[\s\S]*Disconnecting[\s\S]*Updating[\s\S]*RollingBack[\s\S]*Error'
 Require-Match 'UPDATE/connect/cleanup enforce atomic transitions' ($app + $screens) `
