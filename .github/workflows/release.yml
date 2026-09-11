@@ -24,17 +24,36 @@ jobs:
           scripts\build-release.ps1 -BuildDir build-release
           scripts\run-tests.ps1 -BuildDir build-release
           scripts\validate-licenses.ps1
-      - name: Необязательная подпись и проверка Authenticode
+      # Стабильный тег vX.Y.Z подписывается обязательно: отсутствие
+      # сертификата, неудачная подпись, отсутствие метки времени или
+      # непрошедшая проверка подписи останавливают выпуск. Для тега
+      # предварительной версии vX.Y.Z-rc.N подпись остаётся необязательной —
+      # это осознанное исключение, описанное в docs/production/RELEASE_SIGNING.md.
+      - name: Обязательная подпись Authenticode для стабильного тега
+        if: ${{ !contains(github.ref_name, '-rc.') }}
+        shell: powershell
+        env:
+          AUTHENTICODE_PFX_B64: ${{ secrets.AUTHENTICODE_PFX_B64 }}
+          AUTHENTICODE_PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
+        run: scripts\authenticode-sign.ps1 -File build-release\CHEBURNET.exe -Require
+      - name: Необязательная подпись Authenticode для предварительного выпуска
+        if: ${{ contains(github.ref_name, '-rc.') }}
         shell: powershell
         env:
           AUTHENTICODE_PFX_B64: ${{ secrets.AUTHENTICODE_PFX_B64 }}
           AUTHENTICODE_PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
         run: scripts\authenticode-sign.ps1 -File build-release\CHEBURNET.exe
+      # Хеши и подписанный манифест считаются ТОЛЬКО после подписи, поэтому
+      # опубликованный SHA-256 описывает именно подписанный файл.
       - name: Сборка релиза и подписанных метаданных обновления
         shell: powershell
         env:
           CHEBURNET_SIGNING_KEY_CNG_BLOB_B64: ${{ secrets.CHEBURNET_SIGNING_KEY_CNG_BLOB_B64 }}
         run: scripts\prepare-release.ps1 -Tag '${{ github.ref_name }}' -Repository '${{ github.repository }}' -BuildDir build-release -OutDir dist
+      - name: Независимая проверка подписи публикуемого файла
+        if: ${{ !contains(github.ref_name, '-rc.') }}
+        shell: powershell
+        run: scripts\verify-authenticode.ps1 -File dist\CHEBURNET.exe -RequireTimestamp
       - name: Публикация релиза GitHub
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:

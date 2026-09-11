@@ -61,6 +61,9 @@ $manifestSigner = Read-Source 'scripts\sign-update-manifest.ps1'
 $manifestVerifier = Read-Source 'scripts\verify-update-manifest-signature.ps1'
 $releasePreparation = Read-Source 'scripts\prepare-release.ps1'
 $versionModel = Read-Source 'scripts\version.ps1'
+$authenticode = Read-Source 'scripts\authenticode.ps1'
+$authenticodeSign = Read-Source 'scripts\authenticode-sign.ps1'
+$releaseWorkflow = Read-Source '.github\workflows\release.yml'
 
 Require-Match 'P1-01 strict descendant package cleanup' ($package + $packagePath) `
     'Assert-SafePackageOutDir[\s\S]*strict descendant'
@@ -151,6 +154,18 @@ Require-Match 'RELEASE signing key must match embedded trust key' $manifestSigne
     'manifest key_id does not match[\s\S]*EccPublicBlob[\s\S]*private signing key does not match the embedded public key[\s\S]*VerifyData'
 Require-Match 'RELEASE independently verifies signed manifest before publish' ($releasePreparation + $manifestVerifier) `
     'sign-update-manifest\.ps1[\s\S]*verify-update-manifest-signature\.ps1[\s\S]*EccPublicBlob[\s\S]*VerifyData'
+Require-Match 'RELEASE stable tag cannot be published unsigned' ($authenticodeSign + $releasePreparation) `
+    'AUTHENTICODE_SIGNING_REQUIRED[\s\S]*\$requireSignature = -not \$version\.IsPrerelease'
+Require-Match 'RELEASE signature policy is fail-closed on every status' $authenticode `
+    "Get-AuthenticodeSignature[\s\S]*expected 'Valid'[\s\S]*signature is not timestamped"
+Require-Match 'RELEASE published launcher is bound to the signed bytes' $releasePreparation `
+    'ExpectedSha256 \$signedLauncherSha256[\s\S]*launcher changed after release metadata generation[\s\S]*signed manifest declares launcher SHA-256'
+Require-Order 'RELEASE hashes are generated only after signing' $releaseWorkflow @(
+    'authenticode-sign.ps1', 'prepare-release.ps1', 'verify-authenticode.ps1',
+    'softprops/action-gh-release')
+Require-Order 'RELEASE stable signing step is gated by release channel' $releaseWorkflow @(
+    "!contains(github.ref_name, '-rc.')",
+    'authenticode-sign.ps1 -File build-release\CHEBURNET.exe -Require')
 Require-Match 'LAUNCHER DLL search hardening is fail-closed' $main `
     'if \(!::SetDefaultDllDirectories\(LOAD_LIBRARY_SEARCH_SYSTEM32\)\)[\s\S]*return 6;'
 Require-Match 'LAUNCHER instance mutex has protected admin/system security' $main `
