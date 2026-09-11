@@ -62,6 +62,8 @@ $manifestVerifier = Read-Source 'scripts\verify-update-manifest-signature.ps1'
 $releasePreparation = Read-Source 'scripts\prepare-release.ps1'
 $versionModel = Read-Source 'scripts\version.ps1'
 $authenticode = Read-Source 'scripts\authenticode.ps1'
+$checkService = Read-Source 'src\update\UpdateCheckService.cpp'
+$checkServiceHeader = Read-Source 'src\update\UpdateCheckService.h'
 $authenticodeSign = Read-Source 'scripts\authenticode-sign.ps1'
 $releaseWorkflow = Read-Source '.github\workflows\release.yml'
 
@@ -124,6 +126,18 @@ Require-Match 'UPDATE/connect/cleanup declare explicit serialized states' $opera
     'Disconnected[\s\S]*Connecting[\s\S]*Connected[\s\S]*Disconnecting[\s\S]*Updating[\s\S]*RollingBack[\s\S]*Error'
 Require-Match 'UPDATE/connect/cleanup enforce atomic transitions' ($app + $screens) `
     'TryTransition[\s\S]*AppOperationState::Disconnecting[\s\S]*AppOperationState::Updating'
+Require-Match 'UPDATE background check joins its worker before destruction' $checkService `
+    'UpdateCheckService::~UpdateCheckService\(\) \{ Cancel\(\); \}[\s\S]*worker_\.joinable\(\)[\s\S]*worker_\.join\(\)'
+Reject-Match 'UPDATE background check never detaches its worker' ($checkService + $checkServiceHeader) `
+    'detach\(\)'
+Reject-Match 'UPDATE background check never touches the interface' ($checkService + $checkServiceHeader) `
+    '(?i)(ui_|FrameBuffer|ShowMessage|UiContext|Present\(\)|BeginFrame)'
+Require-Match 'UPDATE background check cancellation reaches the HTTP client' ($checkService + $manager) `
+    'CheckNow\(true, &cancel\)[\s\S]*manifestOptions\.cancel = cancel[\s\S]*signatureOptions\.cancel = cancel'
+Require-Order 'UPDATE startup starts the check before connecting and stops it after' $app @(
+    'StartUpdateCheck();', 'DoConnectFlow();', 'updateCheck_->Cancel();')
+Reject-Match 'UPDATE startup never waits on network input/output' $app `
+    'CheckUpdatesOnStart'
 Require-Match 'UPDATE HTTPS-only redirects' $http `
     'WINHTTP_OPTION_REDIRECT_POLICY_NEVER[\s\S]*IsAllowedRedirect'
 Require-Match 'UPDATE stable channel follows only the latest stable GitHub release' $managerHeader `

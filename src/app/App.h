@@ -12,6 +12,7 @@
 #include "../ui/Theme.h"
 #include "../ui/UiContext.h"
 #include "../update/UpdateManager.h"
+#include "../update/UpdateCheckService.h"
 #include "OperationState.h"
 
 namespace cheburnet {
@@ -65,7 +66,10 @@ private:
     void          ScreenLogs();
     void          ScreenAbout();
     void          ScreenUpdates();
-    void          CheckUpdatesOnStart();
+    // Запускает фоновую проверку обновлений и забирает её результат из циклов
+    // интерфейса. Подключение никогда не ждёт сетевого ввода-вывода.
+    void          StartUpdateCheck();
+    void          PollUpdateCheck();
     bool          DownloadWithProgress(update::UpdateManager& manager,
                                        const update::Artifact& artifact,
                                        const std::wstring& finalName,
@@ -83,6 +87,10 @@ private:
     std::unique_ptr<ProcessManager> pm_;
     std::unique_ptr<ui::UiContext>  ui_;
     OperationState                  operationState_;
+    // Объявлен после ui_/pm_, поэтому разрушается раньше них: его деструктор
+    // отменяет и присоединяет рабочий поток до того, как что-либо, на что тот
+    // мог бы сослаться, перестанет существовать.
+    std::unique_ptr<update::UpdateCheckService> updateCheck_;
 
     // Shared idle-mascot animation state (continuous across screens).
     ui::AnimationClock              mascotClock_;

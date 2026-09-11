@@ -77,7 +77,7 @@ bool IsSafeStagingFileName(std::wstring_view name) {
     return true;
 }
 
-CheckResult UpdateManager::CheckNow(bool enabled) const {
+CheckResult UpdateManager::CheckNow(bool enabled, std::atomic<bool>* cancel) const {
     CheckResult result;
     if (!enabled) {
         result.status = CheckStatus::Disabled;
@@ -87,6 +87,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
     WinHttpClient client;
     HttpOptions manifestOptions;
     manifestOptions.maxBytes = 64 * 1024;
+    manifestOptions.cancel = cancel;
     {
         std::scoped_lock lock(g_manifestCacheMutex);
         manifestOptions.etag = g_manifestEtag;
@@ -113,6 +114,7 @@ CheckResult UpdateManager::CheckNow(bool enabled) const {
     }
     HttpOptions signatureOptions;
     signatureOptions.maxBytes = 1024;
+    signatureOptions.cancel = cancel;
     HttpResult signature = client.Get(kDefaultSignatureUrl, signatureOptions);
     if (signature.status != HttpStatus::Ok) {
         result.status = CheckStatus::Rejected;
