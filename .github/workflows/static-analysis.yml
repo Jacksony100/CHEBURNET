@@ -32,7 +32,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release -DCHEBURNET_ENABLE_ANALYZE=ON
           if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
           & $CMakeExe --build build-analyze
-          if ($LASTEXITCODE -ne 0) { throw 'статический анализ MSVC нашёл проблемы' }
+          # ASCII only inside an inline PowerShell block: the runner writes it to a
+          # .ps1 that Windows PowerShell 5.1 reads as ANSI, so non-ASCII breaks parsing.
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC static analysis reported findings' }
 
   codeql:
     runs-on: windows-latest

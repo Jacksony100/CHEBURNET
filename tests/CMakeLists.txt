@@ -49,6 +49,14 @@ add_test(NAME release_metadata
             -Launcher "$<TARGET_FILE:CHEBURNET>"
             -Payload "${CHEBURNET_TEST_PACKAGE}")
 
+# Встроенный PowerShell в процессах GitHub Actions обязан быть только ASCII:
+# раннер записывает блок во временный .ps1 без BOM, а PowerShell 5.1 читает
+# такой файл как ANSI.
+add_test(NAME workflow_encoding
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/workflow_encoding.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}")
+
 # Стабильный выпуск не может быть опубликован без действительной подписи.
 add_test(NAME release_signing
     COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass

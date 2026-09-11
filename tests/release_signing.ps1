@@ -73,18 +73,47 @@ Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $noTimestamp -Require
     'a signature without a countersignature must be rejected when a timestamp is required'
 Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $noTimestamp).Count -eq 0) `
     'a timestamp must only be demanded when timestamping is configured'
-$expired = [pscustomobject]@{
-    Status            = 'Valid'
-    SignerCertificate = [pscustomobject]@{
-        Subject    = 'CN=Expired'
-        NotBefore  = [datetime]::Now.AddDays(-40)
-        NotAfter   = [datetime]::Now.AddDays(-1)
-        Thumbprint = ('B' * 40)
-    }
+$expiredSigner = [pscustomobject]@{
+    Subject    = 'CN=Expired'
+    NotBefore  = [datetime]::Now.AddDays(-40)
+    NotAfter   = [datetime]::Now.AddDays(-1)
+    Thumbprint = ('B' * 40)
+}
+# An expired signing certificate is EXPECTED on a correctly timestamped
+# signature: the countersignature proves the file was signed while the
+# certificate was valid, and that is what keeps a past release verifiable.
+# Windows reports Valid in that case. Rejecting it would break every CHEBURNET
+# release the day its signing certificate expires.
+$expiredButTimestamped = [pscustomobject]@{
+    Status                 = 'Valid'
+    SignerCertificate      = $expiredSigner
     TimeStamperCertificate = [pscustomobject]@{ Subject = 'CN=Timestamp' }
 }
-Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $expired -RequireTimestamp).Count -gt 0) `
-    'an expired signing certificate must be rejected'
+Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $expiredButTimestamped `
+    -RequireTimestamp).Count -eq 0) `
+    'an expired certificate on a timestamped signature must still be accepted'
+# Without a countersignature there is nothing proving when it was signed, so an
+# expired certificate is a rejection.
+$expiredNoTimestamp = [pscustomobject]@{
+    Status                 = 'Valid'
+    SignerCertificate      = $expiredSigner
+    TimeStamperCertificate = $null
+}
+Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $expiredNoTimestamp).Count -gt 0) `
+    'an expired certificate without a timestamp must be rejected'
+# A certificate that is not valid yet is equally unusable without a timestamp.
+$notYetValid = [pscustomobject]@{
+    Status            = 'Valid'
+    SignerCertificate = [pscustomobject]@{
+        Subject    = 'CN=Future'
+        NotBefore  = [datetime]::Now.AddDays(1)
+        NotAfter   = [datetime]::Now.AddDays(40)
+        Thumbprint = ('D' * 40)
+    }
+    TimeStamperCertificate = $null
+}
+Assert-True (@(Test-CheburnetAuthenticodePolicy -Signature $notYetValid).Count -gt 0) `
+    'a not-yet-valid certificate without a timestamp must be rejected'
 $noSigner = [pscustomobject]@{
     Status = 'Valid'; SignerCertificate = $null; TimeStamperCertificate = $null
 }

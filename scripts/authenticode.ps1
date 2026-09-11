@@ -39,27 +39,37 @@ function Test-CheburnetAuthenticodePolicy {
         # are all rejections. There is deliberately no "warn and continue".
         $violations.Add("Authenticode status is '$status', expected 'Valid'")
     }
+    $timestamped = ($null -ne $Signature.TimeStamperCertificate)
     $signer = $Signature.SignerCertificate
     if ($null -eq $signer) {
         $violations.Add('signature carries no signer certificate')
     } else {
-        $notBefore = [datetime]$signer.NotBefore
-        $notAfter = [datetime]$signer.NotAfter
-        $now = [datetime]::Now
-        if ($now -lt $notBefore -or $now -gt $notAfter) {
-            $violations.Add("signer certificate is outside its validity window ($notBefore .. $notAfter)")
+        # The validity window is checked against the CURRENT time only for a
+        # signature that carries no countersignature. A countersignature proves
+        # the file was signed while the certificate was still valid, and Windows
+        # has already validated the chain as of that timestamp when it reports
+        # Valid -- that is the entire purpose of timestamping, and the reason a
+        # correctly signed release stays verifiable after its certificate
+        # expires. Re-checking against "now" here would reject CHEBURNET's own
+        # past releases the day the signing certificate expires.
+        if (-not $timestamped) {
+            $notBefore = [datetime]$signer.NotBefore
+            $notAfter = [datetime]$signer.NotAfter
+            $now = [datetime]::Now
+            if ($now -lt $notBefore -or $now -gt $notAfter) {
+                $violations.Add("signer certificate is outside its validity window " +
+                                "($notBefore .. $notAfter) and the signature is not timestamped")
+            }
         }
         if ([string]::IsNullOrWhiteSpace([string]$signer.Subject)) {
             $violations.Add('signer certificate has no subject')
         }
     }
-    if ($RequireTimestamp) {
+    if ($RequireTimestamp -and -not $timestamped) {
         # A countersignature is what keeps the artifact verifiable after the
         # signing certificate expires. If timestamping is configured it must
         # have actually happened.
-        if ($null -eq $Signature.TimeStamperCertificate) {
-            $violations.Add('signature is not timestamped')
-        }
+        $violations.Add('signature is not timestamped')
     }
     return $violations
 }
