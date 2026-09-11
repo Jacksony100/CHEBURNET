@@ -1,12 +1,12 @@
 {
     "provider":  "Flowseal/zapret-discord-youtube",
-    "version":  "1.10.1",
-    "tag":  "1.10.1",
-    "release_id":  367512178,
-    "source_url":  "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.10.1/zapret-discord-youtube-1.10.1.zip",
-    "release_url":  "https://github.com/Flowseal/zapret-discord-youtube/releases/tag/1.10.1",
-    "imported_at_utc":  "2026-08-13T10:11:08Z",
-    "archive_sha256":  "f748d61fec75e4edc992cb5b09d554e914197c68c690384aceb61f143d8f76c9",
-    "upstream_commit":  "47da17f80ad36a8424cdd25658153fdebd7eb938",
+    "version":  "1.10.2",
+    "tag":  "1.10.2",
+    "release_id":  375784527,
+    "source_url":  "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.10.2/zapret-discord-youtube-1.10.2.zip",
+    "release_url":  "https://github.com/Flowseal/zapret-discord-youtube/releases/tag/1.10.2",
+    "imported_at_utc":  "2026-09-11T07:13:00Z",
+    "archive_sha256":  "5eaac9fb2e4b1abd693487452a3ff3f4dfe9578a45f9ddddfa4bc1f5a6bb62d5",
+    "upstream_commit":  "dfd8e613b099676cf2aa7b474ee5923801514dec",
     "immutable":  true
 }

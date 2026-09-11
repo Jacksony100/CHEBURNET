@@ -49,6 +49,13 @@ add_test(NAME release_metadata
             -Launcher "$<TARGET_FILE:CHEBURNET>"
             -Payload "${CHEBURNET_TEST_PACKAGE}")
 
+# Изолированное дерево проверки импортёра обязано удовлетворять тем же
+# релизным шлюзам, что и сам репозиторий.
+add_test(NAME importer_validation_tree
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/importer_validation_tree.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}")
+
 # Скриптовая реализация модели/сравнения версий обязана совпадать с C++ на
 # одной канонической таблице (tests/version-order-cases.json).
 add_test(NAME version_model
