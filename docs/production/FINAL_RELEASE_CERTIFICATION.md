@@ -2,7 +2,7 @@
 
 Status: **RELEASE_CANDIDATE_READY_WITH_BLOCKERS**
 
-Branch: `claude/production-hardening-v1`
+Branch: `release/production-hardening-v1`
 SHA: `4b027f7e813abd1476f2784442c04c94da52625b` (база: `78cc980a6d0d68f669cf98eff3799c1cf5fa02bd`, тег `v1.0.0-rc.3`)
 Date: 2026-09-11
 

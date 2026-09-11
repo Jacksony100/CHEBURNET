@@ -11,7 +11,7 @@
 | Базовый commit (HEAD до изменений) | `78cc980a6d0d68f669cf98eff3799c1cf5fa02bd` |
 | Тег на базовом commit | `v1.0.0-rc.3` |
 | Рабочее дерево | чистое (`git status --porcelain` — пусто) |
-| Рабочая ветка изменений | `claude/production-hardening-v1` |
+| Рабочая ветка изменений | `release/production-hardening-v1` |
 | Существующие теги | `v1.0.0-rc.1`, `v1.0.0-rc.2`, `v1.0.0-rc.3` |
 
 ## Окружение сборки

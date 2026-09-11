@@ -7,7 +7,7 @@ name: Статический анализ
 
 on:
   push:
-    branches: ['main', 'claude/**']
+    branches: ['main', 'release/**']
   pull_request:
   schedule:
     - cron: '41 5 * * 3'

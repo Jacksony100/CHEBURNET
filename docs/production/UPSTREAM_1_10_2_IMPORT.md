@@ -125,7 +125,7 @@ simple_fake, simple_fake_alt, simple_fake_alt2
 
 ## Проверка
 
-Все команды выполнены на ветке `claude/production-hardening-v1`.
+Все команды выполнены на ветке `release/production-hardening-v1`.
 
 | Проверка | Команда | Результат |
 |---|---|---|
