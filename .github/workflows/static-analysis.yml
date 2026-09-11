@@ -1,0 +1,53 @@
+name: Статический анализ
+
+# Два независимых анализатора: встроенный в MSVC /analyze и CodeQL.
+# /analyze запускается с /WX, поэтому любая новая находка в коде CHEBURNET
+# останавливает задание. Подавлено ровно одно предупреждение — дефект
+# SAL-аннотации в заголовке Windows SDK, обоснование в CMakeLists.txt.
+
+on:
+  push:
+    branches: ['main', 'claude/**']
+  pull_request:
+  schedule:
+    - cron: '41 5 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  msvc-analyze:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Сборка с MSVC /analyze
+        shell: powershell
+        run: |
+          . scripts\vsenv.ps1
+          Import-VcVars
+          & $CMakeExe -S . -B build-analyze -G Ninja -DCMAKE_MAKE_PROGRAM="$NinjaExe" `
+            -DCMAKE_BUILD_TYPE=Release -DCHEBURNET_ENABLE_ANALYZE=ON
+          if ($LASTEXITCODE -ne 0) { throw 'configure failed' }
+          & $CMakeExe --build build-analyze
+          if ($LASTEXITCODE -ne 0) { throw 'статический анализ MSVC нашёл проблемы' }
+
+  codeql:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        with:
+          languages: c-cpp
+          queries: security-and-quality
+      - name: Сборка для CodeQL
+        shell: powershell
+        run: scripts\build-release.ps1 -BuildDir build-codeql
+      - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        with:
+          category: /language:c-cpp

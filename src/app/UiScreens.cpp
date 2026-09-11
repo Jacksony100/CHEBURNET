@@ -201,8 +201,12 @@ void App::ScreenBoot() {
         const bool mem = ::GlobalMemoryStatusEx(&ms) != 0;
         lines.push_back({L"КАРТА ПАМЯТИ", mem ? L"ГОТОВО" : L"ОШИБКА",
                          mem ? ui::Severity::Ok : ui::Severity::Error});
-        lines.push_back({L"ТАБЛИЦА РЕСУРСОВ", kEmbeddedResourceCount > 0 ? L"ПРОВЕРЕНА" : L"ПУСТА",
-                         kEmbeddedResourceCount > 0 ? ui::Severity::Ok : ui::Severity::Error});
+        // Непустота гарантирована static_assert в Launcher.cpp, поэтому здесь
+        // показывается фактическое число ресурсов, а не сравнение константы
+        // с константой (MSVC /analyze C6326).
+        lines.push_back({L"ТАБЛИЦА РЕСУРСОВ",
+                         std::to_wstring(kEmbeddedResourceCount) + L" ЗАПИСЕЙ",
+                         ui::Severity::Ok});
         SC_HANDLE scm = ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
         lines.push_back({L"КАНАЛ УПРАВЛЕНИЯ", scm ? L"ГОТОВ" : L"ОГРАНИЧЕН",
                          scm ? ui::Severity::Ok : ui::Severity::Warn});
