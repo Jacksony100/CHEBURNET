@@ -1,6 +1,6 @@
 # Соответствие текущему исходному выпуску
 
-Встроенный исходный проект: `Flowseal/zapret-discord-youtube` 1.10.1,
+Встроенный исходный проект: `Flowseal/zapret-discord-youtube` 1.10.2,
 импортированный из неизменяемого файла релиза. Точные ID релиза, фиксация, URL и SHA-256 архива
 записаны в `resources/upstream/provenance.json`.
 
