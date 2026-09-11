@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(CHEBURNET VERSION 1.0.0 LANGUAGES CXX)
+# Единственный авторитетный источник версии (семантическая + числовая PE +
+# prerelease + канал). Подключается до project(), поэтому использует
+# CMAKE_CURRENT_LIST_DIR.
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/Version.cmake")
+
+project(CHEBURNET VERSION "${CHEBURNET_VERSION_PE}" LANGUAGES CXX)
+
+message(STATUS "CHEBURNET: версия ${CHEBURNET_VERSION_SEMANTIC} "
+               "(PE ${CHEBURNET_VERSION_PE}, канал ${CHEBURNET_RELEASE_CHANNEL})")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,7 +38,7 @@ set(STRATEGY_SRC  "${CMAKE_SOURCE_DIR}/resources/strategies_src")
 file(MAKE_DIRECTORY "${GEN_DIR}")
 
 # Launcher version is a single source of truth. C++, PE VERSIONINFO and the
-# embedded application manifest are all configured from project(VERSION).
+# embedded application manifest are all configured from cmake/Version.cmake.
 configure_file(
     "${CMAKE_SOURCE_DIR}/cmake/GeneratedVersion.h.in"
     "${GEN_DIR}/GeneratedVersion.h" @ONLY)

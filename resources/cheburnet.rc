@@ -31,12 +31,12 @@ BEGIN
             VALUE "CompanyName",      "CHEBURNET Labs"
             VALUE "Comments",         "CHEBURNET LABS // РАЗРАБОТАНО MARSHAL JACKSONY100"
             VALUE "FileDescription",  "CHEBURNET — управление соединением"
-            VALUE "FileVersion",      CHEBURNET_VERSION_RC_STR
+            VALUE "FileVersion",      CHEBURNET_VERSION_PE_STR
             VALUE "InternalName",     "CHEBURNET"
             VALUE "LegalCopyright",   "CHEBURNET (MIT). Уведомления и лицензии сторонних компонентов включены."
             VALUE "OriginalFilename", "CHEBURNET.exe"
             VALUE "ProductName",      "CHEBURNET"
-            VALUE "ProductVersion",   CHEBURNET_VERSION_RC_STR
+            VALUE "ProductVersion",   CHEBURNET_VERSION_PE_STR
         END
     END
     BLOCK "VarFileInfo"

@@ -60,6 +60,7 @@ $packageBuilder = Read-Source 'scripts\build-update-package.ps1'
 $manifestSigner = Read-Source 'scripts\sign-update-manifest.ps1'
 $manifestVerifier = Read-Source 'scripts\verify-update-manifest-signature.ps1'
 $releasePreparation = Read-Source 'scripts\prepare-release.ps1'
+$versionModel = Read-Source 'scripts\version.ps1'
 
 Require-Match 'P1-01 strict descendant package cleanup' ($package + $packagePath) `
     'Assert-SafePackageOutDir[\s\S]*strict descendant'
@@ -136,8 +137,14 @@ Reject-Match 'STRATEGY runtime has no fixed strategy count' $strategyRuntime `
     '(?i)(strategyCount|All\(\)\.size\(\))\s*(?:==|=)\s*\d+'
 Require-Match 'UPSTREAM embedded bytes checked against immutable archive' $upstreamVerify `
     'archive_sha256[\s\S]*Get-StreamSha256[\s\S]*upstream byte mismatch[\s\S]*UPSTREAM_FIDELITY: PASS'
-Require-Match 'RELEASE manifest version matches actual PE and package' $releaseManifest `
-    'GetVersionInfo[\s\S]*launcher PE version mismatch[\s\S]*payload package metadata does not match provenance/schema'
+Require-Match 'RELEASE manifest version matches actual PE and package' ($releaseManifest + $versionModel) `
+    'payload package metadata does not match provenance/schema[\s\S]*GetVersionInfo[\s\S]*launcher PE version mismatch'
+Require-Match 'RELEASE semantic version comes from the authoritative version model' $releaseManifest `
+    'Get-CheburnetVersion[\s\S]*does not match source semantic version[\s\S]*Assert-CheburnetLauncherPeVersion'
+Require-Match 'RELEASE tag must match the source version and channel' ($releasePreparation + $versionModel) `
+    'Assert-CheburnetReleaseTag[\s\S]*does not match source semantic version[\s\S]*tag channel and source release channel disagree'
+Reject-Match 'RELEASE never derives the semantic version from the numeric PE version' $releaseManifest `
+    '\$LauncherVersion\.0'
 Require-Match 'RELEASE package builder re-hashes final serialized entries' $packageBuilder `
     'Re-open the final object[\s\S]*TransformFinalBlock[\s\S]*final package entry SHA-256 mismatch'
 Require-Match 'RELEASE signing key must match embedded trust key' $manifestSigner `
