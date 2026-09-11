@@ -1,4 +1,17 @@
 name: Проверка исходного выпуска
+
+# Новый стабильный выпуск Flowseal обязан превращаться в устойчивую задачу,
+# а не в разовую строку в журнале запуска.
+#
+# Почему задача, а не черновой pull request: создание ветки требует
+# contents: write у запланированного рабочего процесса, то есть постоянного
+# права записи в репозиторий у автоматики, которая обрабатывает содержимое
+# стороннего выпуска. Импортёр детерминирован и сверяет архив с неизменяемым
+# digest релизного ассета, поэтому локальный запуск воспроизводит ровно то,
+# что проверил CI, и права записи ничего не добавляют к полезности задачи.
+# Разбор различий доступен в артефактах запуска. Ничто и никогда не
+# объединяется автоматически.
+
 on:
   schedule:
     - cron: '19 7 * * 1'
@@ -8,15 +21,116 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  detect:
     runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.report.outputs.status }}
+      version: ${{ steps.report.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Проверка последнего неизменяемого стабильного релиза
+      - name: Сравнение встроенной нагрузки с последним неизменяемым выпуском
+        id: report
         shell: powershell
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: scripts\sync-upstream.ps1 -CheckOnly
-      - name: Политика обновления
+        run: |
+          scripts\upstream-report.ps1 -JsonOut upstream\report.json -MarkdownOut upstream\report.md
+          $report = Get-Content upstream\report.json -Raw | ConvertFrom-Json
+          "status=$($report.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$($report.latest_version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($report.status -eq 'error') { throw "проверка исходного выпуска не удалась: $($report.error)" }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-detect
+          path: upstream/
+
+  validate:
+    needs: detect
+    if: needs.detect.outputs.status == 'available'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      validation: ${{ steps.import.outputs.validation }}
+      detail: ${{ steps.import.outputs.detail }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Импорт выполняется в одноразовой рабочей копии CI и никуда не
+      # публикуется. Сам импортёр уже проверяет кандидата в изолированном
+      # дереве: чистая сборка, полный набор тестов и побайтовая сверка с
+      # архивом. Здесь дополнительно собирается и тестируется итоговое дерево.
+      - name: Импорт кандидата и полная проверка
+        id: import
         shell: powershell
-        run: Write-Host 'Новый исходный релиз требует проверенной ветки и запроса на слияние; этот процесс никогда не объединяет бинарники автоматически.'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $validation = 'failed'
+          $detail = ''
+          try {
+            scripts\sync-upstream.ps1 -Version '${{ needs.detect.outputs.version }}'
+            scripts\build-release.ps1 -BuildDir build-upstream
+            scripts\run-tests.ps1 -BuildDir build-upstream
+            scripts\verify-upstream.ps1
+            $validation = 'passed'
+            $detail = 'clean build, full test suite and upstream byte fidelity passed'
+          } catch {
+            $detail = [string]$_.Exception.Message
+          }
+          "validation=$validation" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "detail=$detail" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          git diff --stat -- resources | Out-File -FilePath upstream\payload-diff.txt -Encoding utf8
+          git status --porcelain -- resources | Out-File -FilePath upstream\payload-status.txt -Encoding utf8
+          scripts\upstream-report.ps1 -ImportedRoot $PWD -Validation $validation `
+            -ValidationDetail $detail `
+            -RunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' `
+            -JsonOut upstream\report.json -MarkdownOut upstream\report.md
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: upstream-candidate
+          path: upstream/
+
+  task:
+    needs: [detect, validate]
+    if: always() && needs.detect.outputs.status == 'available'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: upstream-candidate
+          path: upstream
+      - name: Создание или обновление одной устойчивой задачи
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          UPSTREAM_VERSION: ${{ needs.detect.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="<!-- cheburnet-upstream:${UPSTREAM_VERSION} -->"
+          title="Upstream Flowseal ${UPSTREAM_VERSION} доступен для импорта"
+          body_file="$(mktemp)"
+          {
+            printf '%s\n\n' "$marker"
+            cat upstream/report.md
+            if [ -s upstream/payload-diff.txt ]; then
+              printf '\n### git diff --stat\n\n```\n'
+              cat upstream/payload-diff.txt
+              printf '```\n'
+            fi
+          } > "$body_file"
+          # Дедупликация по скрытому маркеру, а не по заголовку: заголовок
+          # может быть отредактирован человеком, маркер — нет.
+          existing="$(gh issue list --state all --limit 100 --json number,body \
+            --jq "[.[] | select(.body != null and (.body | contains(\"${marker}\"))) | .number] | first // empty")"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$body_file"
+            echo "updated existing issue #${existing}"
+          else
+            gh issue create --title "$title" --body-file "$body_file"
+          fi

@@ -55,6 +55,13 @@ add_test(NAME release_signing
             -File "${CMAKE_SOURCE_DIR}/tests/release_signing.ps1"
             -RepositoryRoot "${CMAKE_SOURCE_DIR}")
 
+# Новый стабильный выпуск upstream обязан превращаться в устойчивую задачу,
+# без автоматического слияния и без лишних прав.
+add_test(NAME upstream_automation
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/upstream_automation.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}")
+
 # Изолированное дерево проверки импортёра обязано удовлетворять тем же
 # релизным шлюзам, что и сам репозиторий.
 add_test(NAME importer_validation_tree
