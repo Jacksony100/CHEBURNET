@@ -64,6 +64,8 @@ $versionModel = Read-Source 'scripts\version.ps1'
 $authenticode = Read-Source 'scripts\authenticode.ps1'
 $checkService = Read-Source 'src\update\UpdateCheckService.cpp'
 $checkServiceHeader = Read-Source 'src\update\UpdateCheckService.h'
+$diagnostics = Read-Source 'src\app\Diagnostics.cpp'
+$diagnosticsHeader = Read-Source 'src\app\Diagnostics.h'
 $authenticodeSign = Read-Source 'scripts\authenticode-sign.ps1'
 $releaseWorkflow = Read-Source '.github\workflows\release.yml'
 
@@ -180,6 +182,22 @@ Require-Order 'RELEASE hashes are generated only after signing' $releaseWorkflow
 Require-Order 'RELEASE stable signing step is gated by release channel' $releaseWorkflow @(
     "!contains(github.ref_name, '-rc.')",
     'authenticode-sign.ps1 -File build-release\CHEBURNET.exe -Require')
+# Network APIs by name, not the English word "upload": the bundle manifest
+# legitimately contains the sentence that it is never uploaded.
+Reject-Match 'PRIVACY diagnostics export never uses a network API' ($diagnostics + $diagnosticsHeader) `
+    '(?i)(WinHttpOpen|WinHttpConnect|WinHttpSendRequest|InternetOpen|InternetConnect|HttpSendRequest|HttpOpenRequest|WSAStartup|WSASend|WSAConnect|::socket|::connect|::send|curl_easy|URLDownloadToFile|WinHttpClient)'
+Require-Match 'PRIVACY diagnostics export redacts identity, paths, addresses and secrets' $diagnostics `
+    'kRedactedUser[\s\S]*kRedactedMachine[\s\S]*kRedactedPath[\s\S]*kRedactedAddress[\s\S]*kRedactedSecret'
+Require-Match 'PRIVACY diagnostics export redacts every users directory, not only the current profile' $diagnostics `
+    'userProfile[\s\S]*userName[\s\S]*machineName[\s\S]*\\users\\[\s\S]*RedactAddresses[\s\S]*RedactSecrets'
+Reject-Match 'PRIVACY diagnostics export never reads environment blocks or browser state' $diagnostics `
+    '(?i)(GetEnvironmentStrings|CookieContainer|InternetGetCookie|Chrome|Firefox|Edge..User Data)'
+Require-Match 'PRIVACY diagnostics export is bounded and describes itself' ($diagnostics + $diagnosticsHeader) `
+    'maxLogBytes[\s\S]*never_collected[\s\S]*manifest\.json'
+Require-Match 'PRIVACY diagnostics export never silently overwrites' $diagnostics `
+    'CREATE_NEW[\s\S]*ERROR_FILE_EXISTS'
+Require-Match 'PRIVACY diagnostics export requires an explicit user action' $screens `
+    'ScreenDiagnosticsExport[\s\S]*bundle\.preview[\s\S]*Confirm\([\s\S]*WriteZipArchive'
 Require-Match 'LAUNCHER DLL search hardening is fail-closed' $main `
     'if \(!::SetDefaultDllDirectories\(LOAD_LIBRARY_SEARCH_SYSTEM32\)\)[\s\S]*return 6;'
 Require-Match 'LAUNCHER instance mutex has protected admin/system security' $main `

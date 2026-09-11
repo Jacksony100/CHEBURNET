@@ -46,6 +46,7 @@
 #include "core/StatusProbe.h"
 #include "core/SecureFs.h"
 #include "app/OperationState.h"
+#include "app/Diagnostics.h"
 #include "util/CommandLine.h"
 #include "util/StringUtil.h"
 #include "util/Version.h"
@@ -1183,6 +1184,137 @@ static int test_updatestate() {
 }
 
 // ---------------------------------------------------------- WinHTTP policy
+// -------------------------------------------------------- diagnostics export
+static int test_diagnostics() {
+    g_fail = 0;
+    diag::RedactionContext context;
+    context.userName = L"Ivan";
+    context.machineName = L"WORKSTATION-7";
+    context.userProfile = L"C:\\Users\\Ivan";
+
+    // ---- redaction ---------------------------------------------------------
+    {
+        const std::wstring input =
+            L"user=Ivan host=WORKSTATION-7 path=C:\\Users\\Ivan\\AppData\\Local\\log.txt "
+            L"other=D:\\Users\\Petr\\notes.txt ip=192.168.1.77 public=8.8.8.8 "
+            L"v6=2001:0db8:85a3:0000:0000:8a2e:0370:7334 "
+            L"token=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB "
+            L"digest=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const std::wstring out = diag::Redact(input, context);
+        CHECK(out.find(L"Ivan") == std::wstring::npos);
+        CHECK(out.find(L"WORKSTATION-7") == std::wstring::npos);
+        CHECK(out.find(L"Petr") == std::wstring::npos);
+        CHECK(out.find(L"192.168.1.77") == std::wstring::npos);
+        CHECK(out.find(L"8.8.8.8") == std::wstring::npos);
+        CHECK(out.find(L"2001:0db8") == std::wstring::npos);
+        CHECK(out.find(L"ghp_abcdefghijklmnopqrstuvwxyz") == std::wstring::npos);
+        // A SHA-256 digest is deliberately preserved: diagnostics are useless
+        // without the hashes of CHEBURNET-owned files.
+        CHECK(out.find(L"0123456789abcdef0123456789abcdef"
+                       L"0123456789abcdef0123456789abcdef") != std::wstring::npos);
+        CHECK(out.find(L"<ПОЛЬЗОВАТЕЛЬ>") != std::wstring::npos);
+        CHECK(out.find(L"<КОМПЬЮТЕР>") != std::wstring::npos);
+        CHECK(out.find(L"<АДРЕС>") != std::wstring::npos);
+        CHECK(out.find(L"<СКРЫТО>") != std::wstring::npos);
+    }
+    {   // Redaction is case-insensitive and idempotent.
+        const std::wstring once = diag::Redact(L"IVAN on workstation-7", context);
+        CHECK(once.find(L"IVAN") == std::wstring::npos);
+        CHECK(once.find(L"workstation-7") == std::wstring::npos);
+        CHECK(diag::Redact(once, context) == once);
+    }
+    {   // An empty context must not corrupt the text or loop forever.
+        const diag::RedactionContext empty;
+        CHECK(diag::Redact(L"plain text 1.2.3", empty) == L"plain text 1.2.3");
+        CHECK(diag::Redact(L"", context).empty());
+    }
+    {   // Ordinary version numbers must survive: they are not addresses.
+        const std::wstring out = diag::Redact(L"engine 1.10.2 build 26200", context);
+        CHECK(out.find(L"1.10.2") != std::wstring::npos);
+        CHECK(out.find(L"26200") != std::wstring::npos);
+    }
+
+    // ---- CRC-32 against the canonical IEEE test vector ---------------------
+    {
+        const char check[] = "123456789";
+        CHECK(diag::Crc32(check, 9) == 0xCBF43926u);
+        CHECK(diag::Crc32("", 0) == 0u);
+    }
+
+    // ---- ZIP writer --------------------------------------------------------
+    {
+        wchar_t tempDir[MAX_PATH]{};
+        const DWORD tempLength = ::GetTempPathW(MAX_PATH, tempDir);
+        CHECK(tempLength > 0 && tempLength < MAX_PATH);
+        const std::wstring base = std::wstring(tempDir) + L"cheburnet-diag-" +
+                                  std::to_wstring(::GetCurrentProcessId());
+        // Cyrillic and a space in the path: the export must work there.
+        const std::wstring dir = base + L" тест";
+        ::CreateDirectoryW(dir.c_str(), nullptr);
+        const std::wstring zip = dir + L"\\CHEBURNET-diagnostics-test.zip";
+        ::DeleteFileW(zip.c_str());
+
+        std::vector<diag::BundleEntry> entries = {
+            {"manifest.json", "{\"schema\":1}\n"},
+            {"summary.json", std::string(5000, 'x')},
+            {"application.log", ""},
+        };
+        std::wstring error;
+        CHECK(diag::WriteZipArchive(zip, entries, error));
+        CHECK(error.empty());
+
+        // A valid store-only archive: local header magic, central directory and
+        // end-of-central-directory record with the right entry count.
+        const std::string bytes = ReadWholeFile(zip);
+        CHECK(bytes.size() > 5000);
+        CHECK(bytes.rfind("PK\x03\x04", 0) == 0);
+        const std::size_t endRecord = bytes.rfind("PK\x05\x06");
+        CHECK(endRecord != std::string::npos && endRecord + 22 <= bytes.size());
+        if (endRecord != std::string::npos) {
+            const auto count = static_cast<unsigned>(
+                static_cast<unsigned char>(bytes[endRecord + 10]) |
+                (static_cast<unsigned char>(bytes[endRecord + 11]) << 8));
+            CHECK(count == 3);
+        }
+        CHECK(bytes.find("PK\x01\x02") != std::string::npos);
+        CHECK(bytes.find("manifest.json") != std::string::npos);
+
+        // Never silently overwrite an existing export.
+        std::wstring second;
+        CHECK(!diag::WriteZipArchive(zip, entries, second));
+        CHECK(!second.empty());
+
+        // Hostile entry names must be refused before anything is written.
+        const std::wstring hostileZip = dir + L"\\hostile.zip";
+        for (const char* name : {"..\\escape.txt", "../escape.txt", "a\\b.txt", ""}) {
+            std::vector<diag::BundleEntry> hostile = {{name, "x"}};
+            std::wstring rejected;
+            CHECK(!diag::WriteZipArchive(hostileZip, hostile, rejected));
+            CHECK(!rejected.empty());
+        }
+        CHECK(!RuntimePaths::Exists(hostileZip));
+        std::vector<diag::BundleEntry> none;
+        std::wstring emptyError;
+        CHECK(!diag::WriteZipArchive(dir + L"\\none.zip", none, emptyError));
+
+        ::DeleteFileW(zip.c_str());
+        ::RemoveDirectoryW(dir.c_str());
+    }
+
+    // ---- suggested name ----------------------------------------------------
+    {
+        const std::wstring name = diag::SuggestedFileName();
+        CHECK(name.rfind(L"CHEBURNET-diagnostics-", 0) == 0);
+        CHECK(name.size() == std::wstring(L"CHEBURNET-diagnostics-YYYYMMDD-HHMMSS.zip").size());
+        CHECK(name.substr(name.size() - 4) == L".zip");
+        for (const wchar_t c : name) {
+            // The name must stay filesystem-safe on every locale.
+            CHECK(c != L':' && c != L'/' && c != L'\\' && c != L' ');
+        }
+    }
+    return g_fail;
+}
+
 // ------------------------------------------------ property / mutation fuzzing
 //
 // Deterministic by construction: a fixed-seed xorshift PRNG mutates known-good
@@ -1779,6 +1911,7 @@ int wmain(int argc, wchar_t** argv) {
         {L"updatecheckservice", test_updatecheckservice},
         {L"fuzzparsers", test_fuzzparsers},
         {L"faultinjection", test_faultinjection},
+        {L"diagnostics", test_diagnostics},
     };
 
     int failures = 0;

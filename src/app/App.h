@@ -63,6 +63,7 @@ private:
     void          ScreenMainMenu();
     void          ScreenStrategy();
     void          ScreenDiagnostics();
+    void          ScreenDiagnosticsExport();
     void          ScreenLogs();
     void          ScreenAbout();
     void          ScreenUpdates();
