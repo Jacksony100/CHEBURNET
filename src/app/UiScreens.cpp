@@ -737,6 +737,10 @@ void App::ScreenMainMenu() {
     };
 
     for (;;) {
+        // Результат фоновой проверки обновлений забирается здесь, в цикле с
+        // опросом клавиатуры 120-250 мс: интерфейс остаётся отзывчивым, а
+        // сообщение появляется тогда, когда результат действительно готов.
+        PollUpdateCheck();
         BeginFrame();
         if (EnsureUsableSize()) {
             auto& fb = ui_->FB();
@@ -1194,6 +1198,10 @@ void App::ScreenUpdates() {
                 L"[СЕТЬ] HTTPS / системный прокси\n[ПОДПИСЬ] Отдельная подпись ECDSA P-256\n"
                 L"Проверка выполняется. Сетевой сбой не мешает рабочей среде.",
                 UiColor::Primary);
+    // Фоновая проверка останавливается и присоединяется до явной проверки,
+    // чтобы два запроса не конкурировали за один кэш проверенного манифеста и
+    // чтобы пользователь видел результат именно своего действия.
+    if (updateCheck_) updateCheck_->Cancel();
     update::UpdateManager manager(paths_);
     const update::CheckResult check = manager.CheckNow(
         config_.update.mode != UpdateMode::Disabled);

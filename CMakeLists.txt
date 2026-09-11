@@ -130,6 +130,7 @@ set(LIB_SOURCES
     src/update/UpdatePackage.cpp
     src/update/RuntimeActivation.cpp
     src/update/UpdateManager.cpp
+    src/update/UpdateCheckService.cpp
     src/update/RuntimeStateStore.cpp
     src/console/ConsoleRenderer.cpp
     src/console/Mascot.cpp

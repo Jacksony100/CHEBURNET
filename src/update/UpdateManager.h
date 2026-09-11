@@ -53,7 +53,11 @@ public:
 
     // Fetch manifest + detached signature independently, verify exact bytes,
     // then parse and evaluate versions. No unsigned fallback exists.
-    CheckResult CheckNow(bool enabled = true) const;
+    //
+    // `cancel` is an optional cooperative cancellation flag passed straight to
+    // the HTTP client, so a pending request is aborted instead of waiting out
+    // its timeout. It affects transport only: every trust check is unchanged.
+    CheckResult CheckNow(bool enabled = true, std::atomic<bool>* cancel = nullptr) const;
 
     // Download a signed-manifest artifact to hardened staging, enforcing size
     // and SHA-256. This does not execute or silently apply elevated binaries.

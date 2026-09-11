@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -30,6 +31,7 @@
 #include "update/RuntimeStateStore.h"
 #include "update/SignatureVerifier.h"
 #include "update/UpdateManager.h"
+#include "update/UpdateCheckService.h"
 #include "update/UpdateManifest.h"
 #include "update/UpdatePackage.h"
 #include "update/Version.h"
@@ -1178,6 +1180,142 @@ static int test_updatestate() {
 }
 
 // ---------------------------------------------------------- WinHTTP policy
+// ------------------------------------------ asynchronous update-check service
+//
+// Deterministic by construction: the fake check blocks on a flag the test
+// controls instead of on a sleep, so no assertion depends on timing.
+namespace {
+
+struct FakeCheck {
+    std::atomic<bool> entered{false};
+    std::atomic<bool> release{false};
+    std::atomic<int>  invocations{0};
+    std::atomic<bool> observedCancel{false};
+    update::CheckStatus status = update::CheckStatus::Current;
+    std::string payloadVersion = "1.10.2";
+
+    update::UpdateCheckService::CheckFunction Function() {
+        return [this](std::atomic<bool>& cancel) {
+            ++invocations;
+            entered.store(true);
+            while (!release.load() && !cancel.load()) {
+                std::this_thread::yield();
+            }
+            if (cancel.load()) observedCancel.store(true);
+            update::CheckResult produced;
+            produced.status = status;
+            produced.message = L"fake";
+            produced.manifest.payload.version = payloadVersion;
+            produced.manifest.launcher.version = "1.0.0";
+            return produced;
+        };
+    }
+
+    void WaitUntilEntered() {
+        while (!entered.load()) std::this_thread::yield();
+    }
+};
+
+// Spins until the service reports a phase, so the test never sleeps.
+void WaitForPhase(const update::UpdateCheckService& service, update::CheckPhase expected) {
+    while (service.Phase() != expected) std::this_thread::yield();
+}
+
+} // namespace
+
+static int test_updatecheckservice() {
+    g_fail = 0;
+
+    {   // Success: the result is delivered exactly once.
+        FakeCheck fake;
+        fake.status = update::CheckStatus::Available;
+        update::UpdateCheckService service(fake.Function());
+        CHECK(service.Phase() == update::CheckPhase::Idle);
+        CHECK(service.Start());
+        fake.WaitUntilEntered();
+        update::CheckResult early;
+        CHECK(!service.TryTakeResult(early));       // not ready yet
+        CHECK(!service.Start());                    // no concurrent second check
+        fake.release.store(true);
+        WaitForPhase(service, update::CheckPhase::Ready);
+        update::CheckResult taken;
+        CHECK(service.TryTakeResult(taken));
+        CHECK(taken.status == update::CheckStatus::Available);
+        CHECK(taken.manifest.payload.version == "1.10.2");
+        update::CheckResult again;
+        CHECK(!service.TryTakeResult(again));       // delivered once only
+        CHECK(service.Phase() == update::CheckPhase::Taken);
+        CHECK(fake.invocations.load() == 1);
+    }
+
+    {   // Offline/timeout is a non-fatal result, not an exception or a hang.
+        FakeCheck fake;
+        fake.status = update::CheckStatus::Offline;
+        fake.release.store(true);
+        update::UpdateCheckService service(fake.Function());
+        CHECK(service.Start());
+        WaitForPhase(service, update::CheckPhase::Ready);
+        update::CheckResult taken;
+        CHECK(service.TryTakeResult(taken));
+        CHECK(taken.status == update::CheckStatus::Offline);
+    }
+
+    {   // Cancellation: the worker observes the flag, Cancel joins, and no
+        // result is handed out afterwards.
+        FakeCheck fake;
+        update::UpdateCheckService service(fake.Function());
+        CHECK(service.Start());
+        fake.WaitUntilEntered();
+        service.Cancel();
+        CHECK(fake.observedCancel.load());
+        CHECK(service.Phase() == update::CheckPhase::Cancelled);
+        update::CheckResult taken;
+        CHECK(!service.TryTakeResult(taken));
+        service.Cancel();                           // idempotent
+        CHECK(!service.Start());                    // stays cancelled
+    }
+
+    {   // Shutdown while a check is pending: the destructor must cancel and
+        // join, so the worker can never outlive the service.
+        FakeCheck fake;
+        {
+            update::UpdateCheckService service(fake.Function());
+            CHECK(service.Start());
+            fake.WaitUntilEntered();
+        }
+        CHECK(fake.observedCancel.load());
+    }
+
+    {   // A result that arrives after the UI moved on is simply never taken.
+        // Destruction must still be clean.
+        FakeCheck fake;
+        fake.release.store(true);
+        {
+            update::UpdateCheckService service(fake.Function());
+            CHECK(service.Start());
+            WaitForPhase(service, update::CheckPhase::Ready);
+        }
+        CHECK(fake.invocations.load() == 1);
+    }
+
+    {   // A throwing check must degrade to a non-fatal offline result.
+        update::UpdateCheckService service(
+            [](std::atomic<bool>&) -> update::CheckResult { throw std::runtime_error("boom"); });
+        CHECK(service.Start());
+        WaitForPhase(service, update::CheckPhase::Ready);
+        update::CheckResult taken;
+        CHECK(service.TryTakeResult(taken));
+        CHECK(taken.status == update::CheckStatus::Offline);
+    }
+
+    {   // An empty check function is refused rather than started.
+        update::UpdateCheckService service(update::UpdateCheckService::CheckFunction{});
+        CHECK(!service.Start());
+        CHECK(service.Phase() == update::CheckPhase::Idle);
+    }
+    return g_fail;
+}
+
 static int test_updatehttp() {
     g_fail = 0;
     CHECK(update::IsSafeStagingFileName(L"CHEBURNET-new.exe"));
@@ -1284,6 +1422,7 @@ int wmain(int argc, wchar_t** argv) {
         {L"updatepackage", test_updatepackage}, {L"updaterollback", test_updaterollback},
         {L"updatestate", test_updatestate},
         {L"updatehttp", test_updatehttp},
+        {L"updatecheckservice", test_updatecheckservice},
     };
 
     int failures = 0;

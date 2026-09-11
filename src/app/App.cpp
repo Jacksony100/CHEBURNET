@@ -320,20 +320,37 @@ int App::Run() {
 
     ScreenSplash();
     ScreenBoot();
-    CheckUpdatesOnStart();
+    // Проверка обновлений уходит в фон до подключения: недоступный DNS, прокси
+    // или сеть не должны выглядеть как зависание и не должны задерживать
+    // подключение ни на миллисекунду.
+    StartUpdateCheck();
     const Post p = DoConnectFlow();
     if (p == Post::Menu) ScreenMainMenu();
     HandleExit();
 
+    // Останавливаем фоновую проверку до разрушения чего-либо, на что она может
+    // ссылаться. Cancel() идемпотентен, деструктор вызовет его повторно.
+    if (updateCheck_) updateCheck_->Cancel();
     SetCursorVisible(true);
     Logger::Info(L"интерфейс завершён");
     return 0;
 }
 
-void App::CheckUpdatesOnStart() {
+void App::StartUpdateCheck() {
     if (!config_.update.checkOnStart || config_.update.mode == UpdateMode::Disabled) return;
-    update::UpdateManager manager(paths_);
-    const update::CheckResult check = manager.CheckNow(true);
+    updateCheck_ = std::make_unique<update::UpdateCheckService>(paths_);
+    if (!updateCheck_->Start()) {
+        Logger::Warn(L"фоновая проверка обновлений не запустилась");
+        updateCheck_.reset();
+    }
+}
+
+void App::PollUpdateCheck() {
+    if (!updateCheck_) return;
+    update::CheckResult check;
+    if (!updateCheck_->TryTakeResult(check)) return;
+    // Результат пришёл из фонового потока уже готовым значением: фоновый код
+    // никогда не рисует сам и ничего не меняет в интерфейсе.
     if (check.status == update::CheckStatus::Available &&
         check.manifest.payload.version != config_.update.skippedPayloadVersion) {
         ShowMessage(L"ДОСТУПНО ОБНОВЛЕНИЕ",
@@ -345,8 +362,8 @@ void App::CheckUpdatesOnStart() {
     } else if (check.status == update::CheckStatus::Rejected) {
         ShowMessage(L"ОБНОВЛЕНИЕ ОТКЛОНЕНО", check.message, ui::UiColor::Error);
     }
-    // Offline/current checks are intentionally silent: startup must remain
-    // usable with the existing known-good runtime.
+    // Offline/current остаются намеренно молчаливыми: запуск обязан оставаться
+    // рабочим с уже установленной проверенной средой.
 }
 
 App::Post App::DoConnectFlow() {
