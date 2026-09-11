@@ -55,6 +55,13 @@ add_test(NAME release_signing
             -File "${CMAKE_SOURCE_DIR}/tests/release_signing.ps1"
             -RepositoryRoot "${CMAKE_SOURCE_DIR}")
 
+# Оснастка релизного шлюза E2E проверяется сама: состав сценариев, защита
+# окружения и схема доказательств. Привилегированные сценарии выполняются
+# только на одноразовой машине, см. docs/production/E2E_RELEASE_GATE.md.
+add_test(NAME e2e_harness
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/scripts/e2e/Invoke-CheburnetE2E.ps1" -SelfTest)
+
 # Новый стабильный выпуск upstream обязан превращаться в устойчивую задачу,
 # без автоматического слияния и без лишних прав.
 add_test(NAME upstream_automation
