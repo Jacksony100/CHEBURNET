@@ -19,7 +19,7 @@
 set(CHEBURNET_VERSION_MAJOR 1)
 set(CHEBURNET_VERSION_MINOR 0)
 set(CHEBURNET_VERSION_PATCH 0)
-set(CHEBURNET_VERSION_PRERELEASE "rc.3")
+set(CHEBURNET_VERSION_PRERELEASE "rc.4")
 
 # --- производные значения: не редактировать ---------------------------------
 
