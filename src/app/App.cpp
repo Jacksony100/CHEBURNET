@@ -10,6 +10,7 @@
 #include "../core/PrivilegeManager.h"
 #include "../core/ResourceExtractor.h"
 #include "../update/RuntimeStateStore.h"
+#include "RuntimeRecovery.h"
 #include "../update/UpdateManager.h"
 #include "../ui/Widgets.h"
 #include "../util/Logger.h"
@@ -64,22 +65,24 @@ App::App(const CliFlags& flags) : cli_(flags) {
         const RuntimePaths currentPaths(str::ToUtf16(state.state.current));
         ProcessManager recovery(paths_);
         const ProcessRecord active = recovery.Record();
-        if (active.valid() &&
-            str::IEqualsAscii(std::wstring_view(active.imagePath),
-                              std::wstring_view(pendingPaths.WinwsExePath()))) {
+        // Решение отделено от исполнения: таблица переходов проверяется тестом
+        // runtimerecovery без прав администратора и без ProgramData.
+        const PendingAction action = DecidePendingRecovery(
+            true, active.valid(), active.imagePath, pendingPaths.WinwsExePath(),
+            currentPaths.WinwsExePath());
+        if (action == PendingAction::RefuseUnknownRuntime) {
+            // Never normalize an unexplained running version by merely
+            // clearing pending state. That would make process identity and
+            // active-runtime.json disagree.
+            throw std::runtime_error("работающая среда не является ни текущей, ни ожидающей");
+        }
+        if (action == PendingAction::StopPendingRuntimeThenClear) {
             const StopResult stopped = recovery.Stop();
             if (stopped.status != StopStatus::Stopped &&
                 stopped.status != StopStatus::NotRunning) {
                 throw std::runtime_error("не удалось остановить прерванную ожидающую среду");
             }
             Logger::Error(L"прерванная ожидающая среда остановлена перед восстановлением состояния");
-        } else if (active.valid() &&
-                   !str::IEqualsAscii(std::wstring_view(active.imagePath),
-                                      std::wstring_view(currentPaths.WinwsExePath()))) {
-            // Never normalize an unexplained running version by merely
-            // clearing pending state. That would make process identity and
-            // active-runtime.json disagree.
-            throw std::runtime_error("работающая среда не является ни текущей, ни ожидающей");
         }
         update::StoredRuntimeState recovered = state.state;
         recovered.pending.clear();
@@ -92,8 +95,10 @@ App::App(const CliFlags& flags) : cli_(flags) {
         std::vector<RuntimeStrategy> catalog;
         ResourceExtractor extractor(paths_);
         ExtractionResult verified = extractor.VerifyInstalledRuntime(catalog);
-        if (!verified.ok) {
-            if (!state.ok || state.state.previousKnownGood.empty()) {
+        const IntegrityAction integrity = DecideIntegrityRecovery(
+            false, verified.ok, state.ok, !state.state.previousKnownGood.empty());
+        if (integrity != IntegrityAction::UseInstalled) {
+            if (integrity == IntegrityAction::Refuse) {
                 throw std::runtime_error("активная среда не прошла проверку, версия для отката отсутствует");
             }
             RuntimePaths fallback(str::ToUtf16(state.state.previousKnownGood));

@@ -144,6 +144,7 @@ set(LIB_SOURCES
     src/ui/Widgets.cpp
     src/ui/Watchdog.cpp
     src/app/Diagnostics.cpp
+    src/app/RuntimeRecovery.cpp
     src/app/UiScreens.cpp
     src/app/App.cpp
 )
