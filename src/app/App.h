@@ -23,6 +23,7 @@ struct CliFlags {
     bool reducedMotion = false;
     bool asciiOnly = false;
     bool debugUi = false;
+    bool verifyInstall = false;
 };
 
 // Top-level controller. Owns runtime paths, config, the winws ProcessManager and
@@ -36,6 +37,7 @@ public:
     ~App();
 
     int Run();
+    int VerifyInstallation();
 
 private:
     const RuntimeStrategy& CurrentStrategy() const;
@@ -71,6 +73,7 @@ private:
     // интерфейса. Подключение никогда не ждёт сетевого ввода-вывода.
     void          StartUpdateCheck();
     void          PollUpdateCheck();
+    std::wstring updateNotice_;
     bool          DownloadWithProgress(update::UpdateManager& manager,
                                        const update::Artifact& artifact,
                                        const std::wstring& finalName,

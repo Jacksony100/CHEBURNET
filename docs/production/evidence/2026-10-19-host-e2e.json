@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "environment_kind": "host-isolated-build",
+  "source_base": "6a371e5c825c6dbce7cf2553158ada084f2d1e87",
+  "source_worktree_was_dirty": true,
+  "started_at": "2026-10-19T08:16:30.4935444Z",
+  "finished_at": "2026-10-19T08:17:00.6815043Z",
+  "os": {
+    "Caption": "Майкрософт Windows 11 Pro",
+    "BuildNumber": "26200",
+    "ProductType": 1
+  },
+  "launcher_sha256": "ecab2dd0f14adb8fa60035e197a962c6008d5bfdb40a5a6c437118a7fe21cb6a",
+  "host_e2e_passed": true,
+  "token_runs": [
+    {
+      "token_role": "elevated",
+      "launcher_sha256": "ecab2dd0f14adb8fa60035e197a962c6008d5bfdb40a5a6c437118a7fe21cb6a",
+      "results": [
+        {
+          "scenario": "fresh-install",
+          "outcome": "passed",
+          "detail": "first launch on an empty runtime root"
+        },
+        {
+          "scenario": "existing-install",
+          "outcome": "passed",
+          "detail": "relaunch with an existing config and runtime"
+        },
+        {
+          "scenario": "interrupted-pending",
+          "outcome": "passed",
+          "detail": "pending runtime left by an interrupted update"
+        },
+        {
+          "scenario": "startup-rollback",
+          "outcome": "passed",
+          "detail": "invalid external current rolled back to verified previous"
+        },
+        {
+          "scenario": "filesystem-guards",
+          "outcome": "passed",
+          "detail": "junction planted at the protected logs directory"
+        }
+      ],
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "token_role": "standard-user",
+      "launcher_sha256": "ecab2dd0f14adb8fa60035e197a962c6008d5bfdb40a5a6c437118a7fe21cb6a",
+      "results": [
+        {
+          "scenario": "refuses-unelevated",
+          "outcome": "passed",
+          "detail": "Exception calling \"Start\" with \"0\" argument(s): \"The requested operation requires elevation\""
+        }
+      ],
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "driver": {
+    "filter": "false",
+    "flags": "SNIFF",
+    "exit_code": 0,
+    "running_verified": true,
+    "handle_closed": true,
+    "owned_service_removed": true,
+    "drivers_after": []
+  },
+  "cleanup_exit_code": 0,
+  "production_before": "298275fef8d7588c8bad0956abedf280847e61323c19b85c408fca9c0cb58d79",
+  "production_after": "298275fef8d7588c8bad0956abedf280847e61323c19b85c408fca9c0cb58d79",
+  "production_unchanged": true,
+  "validation": {
+    "schema": 1,
+    "elevated": true,
+    "initial_passed": 54,
+    "initial_failed": 1,
+    "rerun_exit_code": 0,
+    "fidelity_exit_code": 0,
+    "final_passed": 55,
+    "final_failed": 0,
+    "finished_at": "2026-10-19T08:23:08.0738724Z",
+    "error": null
+  },
+  "validation_note": "Initial full run: 54 passed and one test harness stderr handling failure. After fixing expected native stderr handling, the sole failed test passed in an elevated rerun. All 55 cases confirmed, zero unresolved failures; strategy fidelity 88/88.",
+  "limitations": [
+    "Windows 11 Pro build 26200 host; isolated test build with a compile-time runtime namespace.",
+    "Windows 10 and clean OS matrix were not run.",
+    "Driver load test only: UI connection flow, live updates and effectiveness on real traffic are outside this run."
+  ]
+}

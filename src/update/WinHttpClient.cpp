@@ -4,6 +4,10 @@
 #include <winhttp.h>
 
 #include <array>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <utility>
 
 #include "../util/Version.h"
 #include "../core/SecureFs.h"
@@ -34,9 +38,103 @@ bool Cancelled(const HttpOptions& options) {
     return options.cancel && options.cancel->load(std::memory_order_relaxed);
 }
 
+// Only asynchronous WinHTTP requests are closed to cancel in-flight I/O.
+// The callback context and read buffer remain alive through HANDLE_CLOSING,
+// WinHTTP's final callback. No thread closes a synchronous pending handle.
+class AsyncRequest final {
+public:
+    AsyncRequest(HINTERNET handle, const HttpOptions& options,
+                 std::chrono::steady_clock::time_point deadline)
+        : handle_(handle), options_(options), deadline_(deadline) {
+        if (!handle_) return;
+        DWORD_PTR context = reinterpret_cast<DWORD_PTR>(this);
+        if (!::WinHttpSetOption(handle_, WINHTTP_OPTION_CONTEXT_VALUE,
+                                &context, sizeof(context))) return;
+        ready_ = ::WinHttpSetStatusCallback(handle_, Callback,
+                     WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS | WINHTTP_CALLBACK_FLAG_HANDLES,
+                     0) != WINHTTP_INVALID_STATUS_CALLBACK;
+    }
+    ~AsyncRequest() { Close(); }
+    AsyncRequest(const AsyncRequest&) = delete;
+    AsyncRequest& operator=(const AsyncRequest&) = delete;
+    HINTERNET get() const { return handle_; }
+    bool ready() const { return ready_; }
+
+    template<class Begin>
+    bool Run(DWORD expected, Begin begin, DWORD* read = nullptr) {
+        {
+            std::scoped_lock lock(mutex_);
+            completed_ = 0;
+            error_ = 0;
+            bytes_ = 0;
+        }
+        if (Cancelled(options_)) { ::SetLastError(ERROR_OPERATION_ABORTED); return false; }
+        if (std::chrono::steady_clock::now() >= deadline_) {
+            ::SetLastError(ERROR_WINHTTP_TIMEOUT); return false;
+        }
+        if (!begin() && ::GetLastError() != ERROR_IO_PENDING) return false;
+        std::unique_lock lock(mutex_);
+        while (completed_ != expected && error_ == 0) {
+            const bool cancel = Cancelled(options_);
+            const bool timeout = std::chrono::steady_clock::now() >= deadline_;
+            if (cancel || timeout) {
+                lock.unlock();
+                Close();
+                ::SetLastError(cancel ? ERROR_OPERATION_ABORTED : ERROR_WINHTTP_TIMEOUT);
+                return false;
+            }
+            condition_.wait_for(lock, std::chrono::milliseconds(25));
+        }
+        if (error_ != 0) { ::SetLastError(error_); return false; }
+        if (read) *read = bytes_;
+        return true;
+    }
+
+private:
+    static void CALLBACK Callback(HINTERNET, DWORD_PTR context, DWORD status,
+                                   void* information, DWORD length) noexcept {
+        if (!context) return;
+        auto& self = *reinterpret_cast<AsyncRequest*>(context);
+        // Notifications are serialized by the mutex; Close waits until the
+        // final notification has released it before destroying this object.
+        std::scoped_lock lock(self.mutex_);
+        if (status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING) self.closed_ = true;
+        else if (status == WINHTTP_CALLBACK_STATUS_REQUEST_ERROR && information)
+            self.error_ = static_cast<WINHTTP_ASYNC_RESULT*>(information)->dwError;
+        else if (status == WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE ||
+                 status == WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE ||
+                 status == WINHTTP_CALLBACK_STATUS_READ_COMPLETE) {
+            self.completed_ = status;
+            if (status == WINHTTP_CALLBACK_STATUS_READ_COMPLETE) self.bytes_ = length;
+        }
+        self.condition_.notify_all();
+    }
+    void Close() {
+        const HINTERNET handle = std::exchange(handle_, nullptr);
+        if (!handle) return;
+        ::WinHttpCloseHandle(handle);
+        if (ready_) {
+            std::unique_lock lock(mutex_);
+            condition_.wait(lock, [&] { return closed_; });
+        }
+    }
+    HINTERNET handle_ = nullptr;
+    const HttpOptions& options_;
+    std::chrono::steady_clock::time_point deadline_;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    DWORD completed_ = 0;
+    DWORD error_ = 0;
+    DWORD bytes_ = 0;
+    bool closed_ = false;
+    bool ready_ = false;
+};
+
 } // namespace
 
 HttpStatus ClassifyWinHttpError(unsigned long error) {
+    if (error == ERROR_OPERATION_ABORTED || error == ERROR_WINHTTP_OPERATION_CANCELLED)
+        return HttpStatus::Cancelled;
     return error == ERROR_WINHTTP_TIMEOUT ? HttpStatus::Timeout : HttpStatus::WinHttpError;
 }
 
@@ -46,9 +144,15 @@ HttpResult WinHttpClient::Get(std::wstring_view initialUrl, const HttpOptions& o
         result.status = HttpStatus::InvalidUrl;
         return result;
     }
+    if (Cancelled(options)) { result.status = HttpStatus::Cancelled; return result; }
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds((std::max)(1, options.totalTimeoutMs));
     const std::wstring agent = L"CHEBURNET/" CHEBURNET_VERSION_WSTR;
-    InternetHandle session(::WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    InternetHandle session(::WinHttpOpen(agent.c_str(), options.useSystemProxy
+                                         ? WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+                                         : WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS,
+                                         WINHTTP_FLAG_ASYNC));
     if (!session.get()) {
         result.win32Error = ::GetLastError();
         result.status = ClassifyWinHttpError(result.win32Error);
@@ -79,10 +183,11 @@ HttpResult WinHttpClient::Get(std::wstring_view initialUrl, const HttpOptions& o
         if (!connection.get()) {
             result.win32Error = ::GetLastError(); result.status = ClassifyWinHttpError(result.win32Error); return result;
         }
-        InternetHandle request(::WinHttpOpenRequest(connection.get(), L"GET", path.c_str(), nullptr,
+        std::vector<unsigned char> buffer(64 * 1024, 0);
+        AsyncRequest request(::WinHttpOpenRequest(connection.get(), L"GET", path.c_str(), nullptr,
                                                     WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                                    WINHTTP_FLAG_SECURE));
-        if (!request.get()) {
+                                                    WINHTTP_FLAG_SECURE), options, deadline);
+        if (!request.get() || !request.ready()) {
             result.win32Error = ::GetLastError(); result.status = ClassifyWinHttpError(result.win32Error); return result;
         }
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
@@ -92,11 +197,14 @@ HttpResult WinHttpClient::Get(std::wstring_view initialUrl, const HttpOptions& o
         }
         std::wstring headers;
         if (!options.etag.empty()) headers = L"If-None-Match: " + options.etag + L"\r\n";
-        if (!::WinHttpSendRequest(request.get(), headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS
-                                                                 : headers.c_str(),
-                                  headers.empty() ? 0 : static_cast<DWORD>(-1),
-                                  WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
-            !::WinHttpReceiveResponse(request.get(), nullptr)) {
+        if (!request.Run(WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE, [&] {
+                return ::WinHttpSendRequest(request.get(),
+                    headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+                    headers.empty() ? 0 : static_cast<DWORD>(-1),
+                    WINHTTP_NO_REQUEST_DATA, 0, 0, reinterpret_cast<DWORD_PTR>(&request));
+            }) ||
+            !request.Run(WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE,
+                         [&] { return ::WinHttpReceiveResponse(request.get(), nullptr); })) {
             result.win32Error = ::GetLastError(); result.status = ClassifyWinHttpError(result.win32Error); return result;
         }
         DWORD status = 0, statusSize = sizeof(status);
@@ -164,12 +272,14 @@ HttpResult WinHttpClient::Get(std::wstring_view initialUrl, const HttpOptions& o
         // frame (MSVC /analyze C6262). This function also runs on the
         // background update-check thread, so the transfer buffer must not
         // depend on how much stack that thread happens to have.
-        std::vector<unsigned char> buffer(64 * 1024, 0);
         std::uint64_t total = 0;
         for (;;) {
             if (Cancelled(options)) { result.status = HttpStatus::Cancelled; return result; }
             DWORD read = 0;
-            if (!::WinHttpReadData(request.get(), buffer.data(), static_cast<DWORD>(buffer.size()), &read)) {
+            if (!request.Run(WINHTTP_CALLBACK_STATUS_READ_COMPLETE, [&] {
+                    return ::WinHttpReadData(request.get(), buffer.data(),
+                                             static_cast<DWORD>(buffer.size()), nullptr);
+                }, &read)) {
                 result.win32Error = ::GetLastError(); result.status = ClassifyWinHttpError(result.win32Error); return result;
             }
             if (read == 0) break;

@@ -27,4 +27,14 @@ IntegrityAction DecideIntegrityRecovery(bool runtimeIsEmbeddedVersion, bool acti
     return IntegrityAction::RollbackToPrevious;
 }
 
+bool CommitIntegrityRecovery(bool processValid, std::wstring_view runningImage,
+                             std::wstring_view failedImage, std::wstring_view fallbackImage,
+                             const std::function<bool()>& stop,
+                             const std::function<bool()>& commit) {
+    if (processValid && !str::IEqualsAscii(runningImage, fallbackImage)) {
+        if (!str::IEqualsAscii(runningImage, failedImage) || !stop || !stop()) return false;
+    }
+    return commit && commit();
+}
+
 } // namespace cheburnet

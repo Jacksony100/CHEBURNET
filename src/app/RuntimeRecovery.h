@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <functional>
 #include <string_view>
 
 namespace cheburnet {
@@ -52,5 +53,13 @@ enum class IntegrityAction {
 
 IntegrityAction DecideIntegrityRecovery(bool runtimeIsEmbeddedVersion, bool activeVerified,
                                         bool haveTrustedState, bool havePreviousKnownGood);
+
+// Stop a verified failed current process before committing fallback metadata.
+// No process is started here: the normal connection flow starts the verified
+// fallback afterwards. On failure the caller must refuse startup.
+bool CommitIntegrityRecovery(bool processValid, std::wstring_view runningImage,
+                             std::wstring_view failedImage, std::wstring_view fallbackImage,
+                             const std::function<bool()>& stop,
+                             const std::function<bool()>& commit);
 
 } // namespace cheburnet

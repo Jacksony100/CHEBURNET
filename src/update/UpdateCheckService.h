@@ -14,6 +14,8 @@ class RuntimePaths;
 
 namespace cheburnet::update {
 
+bool ShouldNotify(const CheckResult& result, std::string_view skippedPayloadVersion);
+
 enum class CheckPhase { Idle, Running, Ready, Taken, Cancelled };
 
 // Выполняет одну проверку обновлений вне потока интерфейса, чтобы недоступный

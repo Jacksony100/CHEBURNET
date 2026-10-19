@@ -68,6 +68,7 @@ void PrintVersion() {
 void PrintHelp() {
     WriteStdout(std::wstring(L"CHEBURNET v") + CHEBURNET_VERSION_WSTR +
                 L"\r\nИспользование: CHEBURNET.exe [флаги]\r\n\r\n"
+                L"  --verify-install  проверить установку без запуска движка\r\n"
                 L"  --version         показать версию и выйти\r\n"
                 L"  --no-animation    мгновенный вывод без анимаций\r\n"
                 L"  --reduced-motion  спокойный режим (без glitch/typewriter/idle)\r\n"
@@ -82,6 +83,16 @@ void PrintHelp() {
 int wmain(int argc, wchar_t** argv) {
     cheburnet::CliFlags flags;
     for (int i = 1; i < argc; ++i) {
+        if (ArgEq(argv[i], L"--e2e-identity")) {
+#ifdef CHEBURNET_E2E_INSTANCE
+            WriteStdout(L"CHEBURNET_E2E_INSTANCE:" +
+                        cheburnet::str::ToUtf16(CHEBURNET_E2E_INSTANCE) + L"\r\n");
+            return 0;
+#else
+            WriteStderr(L"An isolated E2E build is required.");
+            return 2; // no bootstrap or UI on a production build
+#endif
+        }
         if (ArgEq(argv[i], L"--version") || ArgEq(argv[i], L"-v")) {
             PrintVersion();
             return 0;
@@ -90,7 +101,8 @@ int wmain(int argc, wchar_t** argv) {
             PrintHelp();
             return 0;
         }
-        if (ArgEq(argv[i], L"--no-animation")) flags.noAnimation = true;
+        if (ArgEq(argv[i], L"--verify-install")) flags.verifyInstall = true;
+        else if (ArgEq(argv[i], L"--no-animation")) flags.noAnimation = true;
         else if (ArgEq(argv[i], L"--reduced-motion")) flags.reducedMotion = true;
         else if (ArgEq(argv[i], L"--ascii-only")) flags.asciiOnly = true;
         else if (ArgEq(argv[i], L"--debug-ui")) flags.debugUi = true;
@@ -102,7 +114,7 @@ int wmain(int argc, wchar_t** argv) {
     if (!::SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         const wchar_t* message = L"Не удалось включить безопасный поиск DLL. Запуск отклонён.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
                       MB_OK | MB_ICONERROR);
         return 6;
     }
@@ -113,7 +125,7 @@ int wmain(int argc, wchar_t** argv) {
             &mutexDescriptor, nullptr)) {
         const wchar_t* message = L"Не удалось создать security descriptor блокировки запуска.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
                       MB_OK | MB_ICONERROR);
         return 7;
     }
@@ -121,22 +133,25 @@ int wmain(int argc, wchar_t** argv) {
     mutexSecurity.nLength = sizeof(mutexSecurity);
     mutexSecurity.lpSecurityDescriptor = mutexDescriptor;
     mutexSecurity.bInheritHandle = FALSE;
-    HANDLE instanceMutex = ::CreateMutexW(&mutexSecurity, FALSE,
-                                           L"Global\\CHEBURNET.PublicRelease.Instance.v1");
+    std::wstring mutexName = L"Global\\CHEBURNET.PublicRelease.Instance.v1";
+#ifdef CHEBURNET_E2E_INSTANCE
+    mutexName += L".E2E." + cheburnet::str::ToUtf16(CHEBURNET_E2E_INSTANCE);
+#endif
+    HANDLE instanceMutex = ::CreateMutexW(&mutexSecurity, FALSE, mutexName.c_str());
     const DWORD mutexError = ::GetLastError();
     ::LocalFree(mutexDescriptor);
     if (!instanceMutex || mutexError == ERROR_ALREADY_EXISTS) {
         if (instanceMutex) ::CloseHandle(instanceMutex);
         const wchar_t* message = L"Другой экземпляр CHEBURNET уже выполняется.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET", MB_OK | MB_ICONINFORMATION);
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET", MB_OK | MB_ICONINFORMATION);
         return 5;
     }
 
     if (!cheburnet::PrivilegeManager::IsElevated()) {
         const wchar_t* message = L"CHEBURNET требует подтверждённые права администратора.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск", MB_OK | MB_ICONERROR);
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск", MB_OK | MB_ICONERROR);
         ::CloseHandle(instanceMutex);
         return 2;
     }
@@ -148,7 +163,7 @@ int wmain(int argc, wchar_t** argv) {
     if (paths.ProgramDataRoot().empty()) {
         const wchar_t* message = L"Не удалось получить доверенный путь ProgramData.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск",
                       MB_OK | MB_ICONERROR);
         ::CloseHandle(instanceMutex);
         return 3;
@@ -157,9 +172,11 @@ int wmain(int argc, wchar_t** argv) {
         paths.ProgramDataRoot(), paths.LogsDir(), paths.RuntimeRoot(), paths.UpdatesDir(),
         paths.UserDir());
     if (!bootstrap.ok) {
+        if (flags.verifyInstall)
+            WriteStderr(L"CHEBURNET_INSTALL_REFUSED:bootstrap:" + std::to_wstring(bootstrap.win32Error));
         const std::wstring message = L"Защищённый bootstrap отклонён:\n" + bootstrap.detail;
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — ОБНОВЛЕНИЕ ОТКЛОНЕНО",
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — ОБНОВЛЕНИЕ ОТКЛОНЕНО",
                       MB_OK | MB_ICONERROR);
         ::CloseHandle(instanceMutex);
         return 3;
@@ -167,7 +184,7 @@ int wmain(int argc, wchar_t** argv) {
     if (!cheburnet::Logger::Init(paths.LogsDir())) {
         const wchar_t* message = L"Не удалось создать защищённый журнал. Запуск отклонён.";
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск", MB_OK | MB_ICONERROR);
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — безопасный запуск", MB_OK | MB_ICONERROR);
         ::CloseHandle(instanceMutex);
         return 4;
     }
@@ -175,19 +192,21 @@ int wmain(int argc, wchar_t** argv) {
     int code = 0;
     try {
         cheburnet::App app(flags);
-        code = app.Run();
+        code = flags.verifyInstall ? app.VerifyInstallation() : app.Run();
+        if (flags.verifyInstall && code == 0)
+            WriteStdout(L"CHEBURNET_INSTALL_VERIFIED\r\n");
     } catch (const std::exception& error) {
         const std::wstring message = L"Критическая ошибка CHEBURNET: " +
                                      cheburnet::str::ToUtf16(error.what());
         cheburnet::Logger::Error(message);
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message.c_str(), L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
         code = 1;
     } catch (...) {
         const wchar_t* message = L"Критическая неизвестная ошибка CHEBURNET.";
         cheburnet::Logger::Error(message);
         WriteStderr(message);
-        ::MessageBoxW(nullptr, message, L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
+        if (!flags.verifyInstall) ::MessageBoxW(nullptr, message, L"CHEBURNET — КРИТИЧЕСКАЯ ОШИБКА", MB_OK | MB_ICONERROR);
         code = 1;
     }
 

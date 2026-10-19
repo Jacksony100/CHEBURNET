@@ -151,7 +151,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
     // would write through a pointer with no storage behind it. Fail closed
     // instead of creating an elevated child with unrestricted inheritance.
     SIZE_T attrSize = 0;
-    ::InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    ::InitializeProcThreadAttributeList(nullptr, 2, 0, &attrSize);
     if (attrSize == 0 || attrSize > 64 * 1024) {
         res.win32Error = ::GetLastError();
         closeStd();
@@ -165,7 +165,7 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
         closeStd();
         return res;
     }
-    if (!::InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
+    if (!::InitializeProcThreadAttributeList(attrList, 2, 0, &attrSize)) {
         res.win32Error = ::GetLastError();
         closeStd();
         return res;
@@ -173,6 +173,15 @@ StartResult ProcessManager::Start(const std::wstring& exePath,
     HANDLE inheritList[3] = {hIn, hOut, hErr};
     if (!::UpdateProcThreadAttribute(attrList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inheritList,
                                      sizeof(inheritList), nullptr, nullptr)) {
+        res.win32Error = ::GetLastError();
+        ::DeleteProcThreadAttributeList(attrList);
+        closeStd();
+        return res;
+    }
+
+    DWORD64 imagePolicy = PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON;
+    if (!::UpdateProcThreadAttribute(attrList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+                                      &imagePolicy, sizeof(imagePolicy), nullptr, nullptr)) {
         res.win32Error = ::GetLastError();
         ::DeleteProcThreadAttributeList(attrList);
         closeStd();

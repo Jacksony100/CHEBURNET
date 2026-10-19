@@ -178,17 +178,30 @@ ConnectResult Launcher::Connect(const RuntimeStrategy& strategy, GameFilterMode 
                     L"Запустите CHEBURNET от имени администратора.");
     okcp(3);
     started(4);
-    if (!securefs::EnsureProtectedDirectory(paths_.RuntimeVersionDir()).ok ||
-        !securefs::EnsureProtectedDirectory(paths_.BinDir()).ok ||
-        !securefs::EnsureProtectedDirectory(paths_.ListsDir()).ok)
+    if (!securefs::EnsureTrustedDirectory(paths_.RuntimeVersionDir()).ok ||
+        !securefs::EnsureTrustedDirectory(paths_.BinDir()).ok ||
+        !securefs::EnsureTrustedDirectory(paths_.ListsDir()).ok)
         return fail(4, L"Не удалось подготовить рабочую директорию.", paths_.RuntimeVersionDir());
-    if (!extractor.HardenRuntimeDirs())
+    if (!extractor.VerifyRuntimeDirs())
         return fail(4, L"Не удалось защитить рабочую директорию (ACL).",
                     L"Проверьте права администратора и владельца:\n" + paths_.ProgramDataRoot());
     okcp(4);
 
     // ---- Conflict / already-running checks ----
     if (pm_.IsConnectedByUs()) {
+        // Reusing an existing PID must satisfy the same trust contract as a
+        // fresh launch. An old session may have been started by a vulnerable
+        // launcher or its on-disk runtime may have become corrupt meanwhile.
+        std::vector<RuntimeStrategy> catalog;
+        const auto verified = extractor.VerifyRuntime(catalog);
+        if (!verified.ok) {
+            const auto stopped = pm_.Stop();
+            const bool stoppedOk = stopped.status == StopStatus::Stopped ||
+                                   stopped.status == StopStatus::NotRunning;
+            return fail(4, L"Активная среда не прошла проверку доверия.",
+                        verified.error + (stoppedOk ? L"\nПроверенный процесс остановлен."
+                                                    : L"\nОстановку процесса подтвердить не удалось."));
+        }
         r.kind = ConnectKind::AlreadyRunningOurs;
         r.message = L"CHEBURNET уже подключён (winws.exe запущен ранее).";
         ui::UiEvent e{ui::UiEventType::Info, 0, floor, ui::Severity::Warn, r.message, L""};

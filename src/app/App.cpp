@@ -119,8 +119,18 @@ App::App(const CliFlags& flags) : cli_(flags) {
             rolledBack.previousKnownGood.clear();
             rolledBack.pending.clear();
             rolledBack.lastResult = "startup-integrity-rollback";
-            if (!update::SaveRuntimeState(paths_.ActiveRuntimePath(), rolledBack)) {
-                throw std::runtime_error("не удалось зафиксировать состояние отката при запуске");
+            ProcessManager recovery(paths_);
+            const auto running = recovery.Record();
+            const bool committed = CommitIntegrityRecovery(
+                running.valid(), running.imagePath, paths_.WinwsExePath(), fallback.WinwsExePath(),
+                [&] {
+                    const auto stopped = recovery.Stop();
+                    return stopped.status == StopStatus::Stopped ||
+                           stopped.status == StopStatus::NotRunning;
+                },
+                [&] { return update::SaveRuntimeState(paths_.ActiveRuntimePath(), rolledBack); });
+            if (!committed) {
+                throw std::runtime_error("не удалось согласовать процесс и состояние отката");
             }
             paths_ = std::move(fallback);
             if (!fallbackCatalog.empty()) strategies::ActivateCatalog(std::move(fallbackCatalog));
@@ -147,6 +157,10 @@ App::App(const CliFlags& flags) : cli_(flags) {
             throw std::runtime_error("не удалось сохранить переход на стандартную стратегию");
     }
     pm_ = std::make_unique<ProcessManager>(paths_);
+    if (pm_->IsConnectedByUs() &&
+        !str::IEqualsAscii(pm_->Record().imagePath, paths_.WinwsExePath())) {
+        throw std::runtime_error("работающая версия не совпадает с доверенным состоянием среды");
+    }
     operationState_.Complete(pm_->IsConnectedByUs() ? AppOperationState::Connected
                                                     : AppOperationState::Disconnected);
 }
@@ -179,6 +193,11 @@ ui::UiOptions App::BuildUiOptions() const {
 // ---- chrome helpers --------------------------------------------------------
 
 void App::BeginFrame() {
+    const auto state = operationState_.Get();
+    if (state == AppOperationState::Connected || state == AppOperationState::Disconnected ||
+        state == AppOperationState::Error)
+        operationState_.ObserveProcess(pm_->IsConnectedByUs());
+    PollUpdateCheck();
     ui_->SyncSize();
     ui_->FB().Clear(ui_->Attr(ui::UiColor::Default));
 }
@@ -191,6 +210,8 @@ void App::DrawHeader(std::wstring_view subtitle) {
     const std::wstring ver = L"v" CHEBURNET_VERSION_WSTR;
     fb.PutText(ui_->Width() - static_cast<int>(ver.size()) - 2, 0, ver, th.Attr(ui::UiColor::Muted));
     fb.HLine(2, 1, ui_->Width() - 4, th.G().h, th.Attr(ui::UiColor::PrimaryDim));
+    if (!updateNotice_.empty())
+        fb.PutText(2, 1, updateNotice_, ui_->Attr(ui::UiColor::Warning));
 }
 
 void App::DrawFooter(std::wstring_view hints) {
@@ -305,6 +326,19 @@ bool App::Confirm(std::wstring_view prompt) {
 
 // ---- run flow --------------------------------------------------------------
 
+int App::VerifyInstallation() {
+    ResourceExtractor extractor(paths_);
+    const auto prepared = extractor.EnsureExtracted();
+    if (!prepared.ok) throw std::runtime_error(str::ToUtf8(prepared.error));
+    std::vector<RuntimeStrategy> catalog;
+    const auto checked = extractor.VerifyRuntime(catalog);
+    if (!checked.ok) throw std::runtime_error(str::ToUtf8(checked.error));
+    if (!RuntimePaths::Exists(paths_.ConfigPath()) && !SaveConfig(paths_.ConfigPath(), config_))
+        throw std::runtime_error("cannot initialize configuration");
+    // Deliberately no UI, network check, Launcher, or child process creation.
+    return 0;
+}
+
 int App::Run() {
     ::SetConsoleTitleW(CHEBURNET_WINDOW_TITLE);
     ui_ = std::make_unique<ui::UiContext>(BuildUiOptions());
@@ -356,19 +390,12 @@ void App::PollUpdateCheck() {
     if (!updateCheck_->TryTakeResult(check)) return;
     // Результат пришёл из фонового потока уже готовым значением: фоновый код
     // никогда не рисует сам и ничего не меняет в интерфейсе.
-    if (check.status == update::CheckStatus::Available &&
-        check.manifest.payload.version != config_.update.skippedPayloadVersion) {
-        ShowMessage(L"ДОСТУПНО ОБНОВЛЕНИЕ",
-                    L"Проверенный манифест обновления предлагает CHEBURNET " +
-                        str::ToUtf16(check.manifest.launcher.version) + L" и движок " +
-                        str::ToUtf16(check.manifest.payload.version) +
-                        L".\nПрименение доступно в меню «Проверить обновления».",
-                    ui::UiColor::Warning);
-    } else if (check.status == update::CheckStatus::Rejected) {
-        ShowMessage(L"ОБНОВЛЕНИЕ ОТКЛОНЕНО", check.message, ui::UiColor::Error);
+    if (update::ShouldNotify(check, config_.update.skippedPayloadVersion)) {
+        updateNotice_ = check.status == update::CheckStatus::Rejected
+                            ? L"Обновление отклонено — см. меню обновлений"
+                            : L"Доступно обновление — меню [U]";
     }
-    // Offline/current остаются намеренно молчаливыми: запуск обязан оставаться
-    // рабочим с уже установленной проверенной средой.
+
 }
 
 App::Post App::DoConnectFlow() {

@@ -1,5 +1,13 @@
 #include "Diagnostics.h"
 
+#include <winsock2.h>
+// Windows SDK 10.0.26100: /analyze C6101 in the unused inline
+// WSAGetIPUserMtu wrapper (getsockopt's SAL does not prove the output write).
+// Suppress only while parsing the SDK header, never CHEBURNET code.
+#pragma warning(push)
+#pragma warning(disable: 6101)
+#include <ws2tcpip.h>
+#pragma warning(pop)
 #include <windows.h>
 #include <lmcons.h>
 #include <wintrust.h>
@@ -104,20 +112,30 @@ std::wstring RedactAddresses(std::wstring_view text) {
             pos = probe;
             continue;
         }
-        // IPv6: не меньше трёх групп шестнадцатеричных цифр через двоеточие.
-        probe = pos;
-        int groups = 0;
-        while (probe < text.size()) {
-            const std::size_t groupStart = probe;
-            while (probe < text.size() && IsHexDigit(text[probe]) && probe - groupStart < 4) ++probe;
-            if (probe == groupStart) break;
-            ++groups;
-            if (probe < text.size() && text[probe] == L':') ++probe; else break;
-        }
-        if (groups >= 3 && (pos == 0 || !IsHexDigit(text[pos - 1]))) {
-            output.append(kRedactedAddress);
-            pos = probe;
-            continue;
+        // Candidate must start at a token boundary. Validate the complete
+        // address; never redact only a suffix of a malformed address.
+        const auto addressChar = [](wchar_t c) {
+            return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'z') ||
+                   (c >= L'A' && c <= L'Z') || c == L':' || c == L'.' ||
+                   c == L'%' || c == L'_' || c == L'-';
+        };
+        if ((text[pos] == L':' || IsHexDigit(text[pos])) &&
+            (pos == 0 || !addressChar(text[pos - 1]))) {
+            probe = pos;
+            while (probe < text.size() && addressChar(text[probe])) ++probe;
+            std::wstring candidate(text.substr(pos, probe - pos));
+            const auto scope = candidate.find(L'%');
+            const bool scopeOk = scope == std::wstring::npos ||
+                (scope + 1 < candidate.size() &&
+                 candidate.find(L'%', scope + 1) == std::wstring::npos);
+            const std::wstring address = candidate.substr(0, scope);
+            IN6_ADDR ipv6{};
+            if (scopeOk && address.find(L':') != std::wstring::npos &&
+                ::InetPtonW(AF_INET6, address.c_str(), &ipv6) == 1) {
+                output.append(kRedactedAddress);
+                pos = probe;
+                continue;
+            }
         }
         output.push_back(text[pos++]);
     }
@@ -363,9 +381,10 @@ Bundle BuildBundle(const RuntimePaths& paths, const Config& config,
 
     std::vector<RuntimeStrategy> catalog;
     ExtractionResult integrity;
+    std::vector<RuntimeFile> activeFiles;
     {
         ResourceExtractor verifier(paths);
-        integrity = verifier.VerifyInstalledRuntime(catalog);
+        integrity = verifier.VerifyRuntime(catalog, &activeFiles);
     }
 
     std::string summary;
@@ -410,16 +429,15 @@ Bundle BuildBundle(const RuntimePaths& paths, const Config& config,
     // Хеши только тех файлов, которыми владеет CHEBURNET. Пути внутри архива
     // относительные, чтобы не раскрывать раскладку машины.
     bool firstBinary = true;
-    for (int i = 0; i < kEmbeddedResourceCount; ++i) {
-        const auto& resource = kEmbeddedResources[i];
+    for (const auto& resource : activeFiles) {
         if (!firstBinary) summary += ",\n";
         firstBinary = false;
         summary += "    {" + Quote(std::string_view("name")) + ": " +
-                   Quote(std::string_view(resource.logicalName)) + ", " +
+                   Quote(std::wstring_view(resource.path)) + ", " +
                    Quote(std::string_view("expected_sha256")) + ": " +
                    Quote(std::string_view(resource.sha256)) + ", " +
                    Quote(std::string_view("bytes")) + ": " +
-                   std::to_string(resource.expectedSize) + "}";
+                   std::to_string(resource.size) + "}";
     }
     summary += "\n  ]\n}\n";
 

@@ -1,4 +1,34 @@
 add_executable(cheburnet_tests test_main.cpp)
+if(NOT CHEBURNET_E2E_INSTANCE STREQUAL "")
+    add_executable(host_driver_smoke host_driver_smoke.cpp
+        "${CMAKE_SOURCE_DIR}/resources/generated/cheburnet_payload.rc")
+    target_link_libraries(host_driver_smoke PRIVATE cheburnet_lib)
+    target_compile_options(host_driver_smoke PRIVATE ${CHEBURNET_WARN})
+endif()
+add_executable(review_regressions review_regressions.cpp
+    "${CMAKE_SOURCE_DIR}/resources/generated/cheburnet_payload.rc")
+target_link_libraries(review_regressions PRIVATE cheburnet_lib)
+target_compile_options(review_regressions PRIVATE /W4 /WX /permissive- /utf-8)
+foreach(case inventory cleanup recovery processstate notifications privacy httpcancel elevated)
+    add_test(NAME review_${case} COMMAND review_regressions ${case})
+    set_tests_properties(review_${case} PROPERTIES TIMEOUT 20)
+endforeach()
+set_tests_properties(review_elevated PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME review_contracts
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/review_contracts.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}" -Probe "$<TARGET_FILE:review_regressions>")
+set_tests_properties(review_contracts PROPERTIES TIMEOUT 30)
+add_test(NAME e2e_preparation
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/e2e_preparation.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}" -Probe "$<TARGET_FILE:review_regressions>")
+set_tests_properties(e2e_preparation PROPERTIES TIMEOUT 30)
+add_test(NAME host_e2e_contracts
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/host_e2e_contracts.ps1"
+            -RepositoryRoot "${CMAKE_SOURCE_DIR}" -Probe "$<TARGET_FILE:review_regressions>")
+set_tests_properties(host_e2e_contracts PROPERTIES TIMEOUT 30)
 target_link_libraries(cheburnet_tests PRIVATE cheburnet_lib)
 target_compile_options(cheburnet_tests PRIVATE /W4 /WX /permissive- /utf-8)
 
