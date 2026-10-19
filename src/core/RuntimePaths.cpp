@@ -37,6 +37,9 @@ RuntimePaths::RuntimePaths(std::wstring runtimeVersion) {
     const std::wstring programData = ProgramDataDir();
     if (programData.empty()) return;
     root_ = programData + L"\\" CHEBURNET_PRODUCT_WNAME;
+#ifdef CHEBURNET_E2E_INSTANCE
+    root_ += L"-E2E-" + str::ToUtf16(CHEBURNET_E2E_INSTANCE);
+#endif
     logsDir_ = root_ + L"\\logs";
     configPath_ = root_ + L"\\user\\config.json";
     runtimeRoot_ = root_ + L"\\runtime";
@@ -55,6 +58,20 @@ RuntimePaths::RuntimePaths(std::wstring runtimeVersion) {
     versionDir_ = runtimeRoot_ + L"\\" + runtimeVersion_;
     binDir_ = versionDir_ + L"\\bin";
     listsDir_ = versionDir_ + L"\\lists";
+}
+
+RuntimePaths RuntimePaths::ForOwnedRoot(std::wstring root, std::wstring runtimeVersion) {
+    RuntimePaths result(std::move(runtimeVersion));
+    result.root_ = std::move(root);
+    result.logsDir_ = result.root_ + L"\\logs";
+    result.configPath_ = result.root_ + L"\\user\\config.json";
+    result.runtimeRoot_ = result.root_ + L"\\runtime";
+    result.updatesDir_ = result.root_ + L"\\updates";
+    result.userDir_ = result.root_ + L"\\user";
+    result.versionDir_ = result.runtimeRoot_ + L"\\" + result.runtimeVersion_;
+    result.binDir_ = result.versionDir_ + L"\\bin";
+    result.listsDir_ = result.versionDir_ + L"\\lists";
+    return result;
 }
 
 std::wstring RuntimePaths::WinwsExePath() const {

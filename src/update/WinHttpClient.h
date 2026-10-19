@@ -22,6 +22,8 @@ enum class HttpStatus {
 struct HttpOptions {
     std::uint64_t maxBytes = 64 * 1024;
     int maxRedirects = 4;
+    int totalTimeoutMs = 60000; // one deadline across redirects and body reads
+    bool useSystemProxy = true;
     int resolveTimeoutMs = 5000;
     int connectTimeoutMs = 8000;
     int sendTimeoutMs = 10000;

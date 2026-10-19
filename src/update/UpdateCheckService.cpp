@@ -6,6 +6,14 @@
 
 namespace cheburnet::update {
 
+bool ShouldNotify(const CheckResult& result, std::string_view skippedPayloadVersion) {
+    return result.status == CheckStatus::Rejected ||
+           (result.status == CheckStatus::Available &&
+            (result.launcher == Eligibility::Upgrade ||
+             (result.payload == Eligibility::Upgrade &&
+              result.manifest.payload.version != skippedPayloadVersion)));
+}
+
 UpdateCheckService::UpdateCheckService(CheckFunction check) : check_(std::move(check)) {}
 
 UpdateCheckService::UpdateCheckService(const RuntimePaths& paths)

@@ -44,6 +44,10 @@ Result HardenObject(const std::wstring& path, ObjectKind kind);
 // reparse point, then harden and verify every component below the volume root.
 Result EnsureProtectedDirectory(const std::wstring& path);
 
+// Create with the final owner/DACL, or verify an existing trusted directory.
+// Never adopts a pre-created directory by changing its security.
+Result EnsureTrustedDirectory(const std::wstring& path);
+
 // Privileged atomic write: 128-bit random temp, CREATE_NEW + OPEN_REPARSE_POINT,
 // exact write/flush, mandatory ACL, SHA-256, atomic replace, reopen verification.
 Result AtomicWrite(const std::wstring& target, const void* data, std::size_t size,

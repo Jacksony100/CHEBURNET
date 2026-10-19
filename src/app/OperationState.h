@@ -30,6 +30,16 @@ public:
                                               std::memory_order_acquire);
     }
 
+    void ObserveProcess(bool alive) noexcept {
+        auto state = Get();
+        while (state == AppOperationState::Connected || state == AppOperationState::Disconnected ||
+               state == AppOperationState::Error) {
+            const auto desired = alive ? AppOperationState::Connected : AppOperationState::Disconnected;
+            if (state_.compare_exchange_weak(state, desired, std::memory_order_acq_rel,
+                                             std::memory_order_acquire)) return;
+        }
+    }
+
     void Complete(AppOperationState state) noexcept {
         state_.store(state, std::memory_order_release);
     }

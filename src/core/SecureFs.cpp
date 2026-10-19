@@ -341,6 +341,26 @@ Result EnsureProtectedDirectory(const std::wstring& path) {
     return HardenObject(full, ObjectKind::Directory);
 }
 
+Result EnsureTrustedDirectory(const std::wstring& path) {
+    const std::wstring parent = ParentOf(path);
+    Result parents = ValidatePathComponents(parent);
+    if (!parents.ok) return parents;
+    Result parentAcl = ValidateProtectedObject(parent, ObjectKind::Directory, false);
+    if (!parentAcl.ok) return parentAcl;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!::ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            L"O:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)",
+            SDDL_REVISION_1, &descriptor, nullptr))
+        return WinError(L"Не удалось создать защиту доверенного каталога");
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    const BOOL created = ::CreateDirectoryW(path.c_str(), &attributes);
+    const DWORD error = created ? ERROR_SUCCESS : ::GetLastError();
+    ::LocalFree(descriptor);
+    if (!created && error != ERROR_ALREADY_EXISTS)
+        return Error(error, L"Не удалось создать доверенный каталог: " + path);
+    return ValidateProtectedObject(path, ObjectKind::Directory, false);
+}
+
 Result AtomicWrite(const std::wstring& target, const void* data, std::size_t size,
                    const std::string& expectedSha256) {
     std::optional<std::string> memorySha = IntegrityVerifier::Sha256Hex(data, size);

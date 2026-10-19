@@ -9,6 +9,8 @@ class RuntimePaths {
 public:
     RuntimePaths();
     explicit RuntimePaths(std::wstring runtimeVersion);
+    // Isolated integration fixtures only; never populated from CLI/config/environment.
+    static RuntimePaths ForOwnedRoot(std::wstring root, std::wstring runtimeVersion);
 
     const std::wstring& ProgramDataRoot() const { return root_; }        // %ProgramData%\CHEBURNET
     const std::wstring& LogsDir() const { return logsDir_; }             // ...\logs

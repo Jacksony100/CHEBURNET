@@ -65,15 +65,42 @@ scripts\e2e\Invoke-CheburnetE2E.ps1 -SelfTest
 
 ## Воспроизводимая виртуальная машина
 
+Проверка **без VM** описана в [HOST_E2E.md](HOST_E2E.md). На текущей Windows 11
+она выполнена в отдельном каталоге и отдельной сборке: 6/6 сценариев и загрузка
+настоящего драйвера прошли, рабочая установка сохранена. Такой отчёт относится
+к хосту и не заменяет доказательство чистых Windows 10/11.
+
 ```powershell
 scripts\e2e\New-CheburnetTestVm.ps1 -Edition win11 `
     -IsoPath D:\iso\Win11_x64.iso -ReleaseDir C:\Projects\cheburnet\dist
 ```
 
-Автоматизировано: VM Generation 2 с Secure Boot и виртуальным TPM по
-зафиксированной спецификации, подготовительный VHDX с артефактами выпуска,
-скриптами и маркером одноразовой машины, а также скрипт `Run-InGuest.ps1`,
-который внутри гостя сверяет SHA-256 лончера с опубликованным и запускает набор.
+Автоматизировано: VM Generation 2, 6 ГБ RAM, 4 CPU, динамический системный диск
+80 ГБ, Secure Boot и виртуальный TPM. Ошибка включения TPM завершает подготовку
+ошибкой. Подготовительный VHDX содержит каталог `cheburnet-e2e` с лончером,
+скриптами, инструкцией и `bundle-manifest.json`. Проверяются хеши всех файлов.
+Существующие VM и каталоги VM не перезаписываются; установка Windows и создание
+чистого checkpoint выполняются отдельно.
+
+Подготовить один кандидат для обеих ОС можно без повышения прав:
+
+```powershell
+.\scripts\e2e\New-CheburnetE2EBundle.ps1 `
+    -Launcher .\build-review-final\CHEBURNET.exe -OutDir .\artifacts\e2e-candidate
+```
+
+Манифест сохраняет SHA-256 кандидата, ревизию исходников и признак незакоммиченных
+изменений. Этот пакет предназначен для проверки текущей сборки; он сам по себе
+не подтверждает подпись стабильного выпуска.
+
+В повышенном PowerShell хоста создать две VM (пути ISO указать фактические):
+
+```powershell
+.\scripts\e2e\New-CheburnetTestVm.ps1 -Edition win10 `
+    -IsoPath D:\ISO\Win10_x64.iso -BundleDir .\artifacts\e2e-candidate -VmRoot F:\CheburnetE2E
+.\scripts\e2e\New-CheburnetTestVm.ps1 -Edition win11 `
+    -IsoPath D:\ISO\Win11_x64.iso -BundleDir .\artifacts\e2e-candidate -VmRoot F:\CheburnetE2E
+```
 
 Остаётся ручным: выбор редакции и индекса образа внутри ISO и сама установка
 Windows. Универсальный `unattend.xml` с редакцией и ключом продукта нельзя
@@ -84,11 +111,40 @@ Windows. Универсальный `unattend.xml` с редакцией и кл
 1. `Start-VM` и установка Windows с ISO (редакция выбирается осознанно: нужен
    клиентский Windows 10 x64 или Windows 11 x64, не Windows Server);
 2. `Checkpoint-VM -SnapshotName 'clean-after-setup'`;
-3. в госте из элевированного PowerShell на томе `CHEBURNET-E2E`:
-   `.\scripts\e2e\Run-InGuest.ps1`;
-4. вынести `C:\cheburnet-e2e-results\*\e2e-report.json` и приложить к
-   `docs/production/FINAL_RELEASE_CERTIFICATION.md`;
+3. в госте перейти в `X:\cheburnet-e2e` на томе с меткой `CHEBURNET-E2E`
+   (`X:` — фактическая буква тома). Выполнить команды ниже;
+4. скопировать весь `C:\cheburnet-e2e-results` с каждой VM на хост с сохранением
+   вложенных каталогов и приложить к сертификации;
 5. перед повторным запуском — `Restore-VMSnapshot -Name 'clean-after-setup'`.
+
+Гостевые команды для Windows 10 (для Windows 11 заменить `win10` на `win11`):
+
+```powershell
+# 1. Повышенный PowerShell: подготовить маркер и общий каталог отчётов.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e\Run-InGuest.ps1 -Edition win10 -PrepareOnly
+# 2. Обычный PowerShell, без повышения: проверка отказа запуска.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e\Run-InGuest.ps1 -Edition win10 -Role standard-user
+# 3. Повышенный PowerShell: пять сценариев установки и восстановления.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e\Run-InGuest.ps1 -Edition win10 -Role elevated
+```
+
+`Run-InGuest.ps1` проверяет модель виртуальной машины, клиентскую ОС нужного
+семейства, архитектуру x64, роль токена и хеши пакета. На физическом хосте он
+отказывается создавать маркер. Отчёты разделены по ОС и роли токена; повторный
+запуск получает уникальное имя. Для итоговой проверки собрать **ровно четыре**
+выбранных отчёта одной попытки, остальные попытки хранить отдельно:
+
+```powershell
+.\scripts\e2e\Test-CheburnetE2EMatrix.ps1 `
+    -ReportsDir .\artifacts\e2e-results -BundleManifest .\artifacts\e2e-candidate\bundle-manifest.json
+```
+
+Валидатор требует 12 результатов `passed` (по шесть на ОС), обе роли на каждой
+ОС, отсутствие пропусков/дубликатов, Windows client x64 и одинаковый SHA-256
+лончера. Неполная матрица, Windows Server или отчёт другой сборки дают ошибку.
+Регрессионный тест `e2e_preparation` проверяет упаковку и перенос в макет
+гостевого тома, отказ при повреждении и отклонение ошибочных матриц. Его
+синтетические отчёты живут только во временном каталоге теста.
 
 ## Ручная часть шлюза
 
@@ -118,8 +174,11 @@ Windows. Универсальный `unattend.xml` с редакцией и кл
   "schema": 1,
   "generated_at": "…Z",
   "launcher": "…\CHEBURNET.exe",
+  "launcher_sha256": "…",
   "launcher_version": "1.0.0.0",
-  "machine": { "os": "…", "build": "…", "architecture": "AMD64" },
+  "machine": { "os": "…", "build": "…", "architecture": "AMD64", "product_type": 1 },
+  "token_role": "elevated|standard-user",
+  "required_scenarios": ["…"],
   "environment_refusals": [],
   "results": [ { "scenario": "…", "outcome": "passed|failed|skipped",
                  "detail": "…", "evidence": [ "…" ], "at": "…Z" } ],
@@ -137,10 +196,35 @@ Windows. Универсальный `unattend.xml` с редакцией и кл
 | Самопроверка оснастки | **PASS** (тест CTest `e2e_harness`) |
 | `refuses-unelevated` на машине разработки (Windows 11 Pro 26200) | **PASS** — запуск без прав отклонён Windows, защищённое дерево не изменено |
 | Привилегированные сценарии на машине разработки | **SKIPPED** — машина не помечена как одноразовая и сессия не элевирована; это намеренный отказ защиты, а не сбой |
+| Изолированный регрессионный `review_elevated` | **PASS** с повышенным токеном, код 0; только уникальный временный корень и безвредный тестовый процесс |
 | Чистая VM Windows 11 x64 | **НЕ ВЫПОЛНЕНО** |
 | Чистая VM Windows 10 x64 | **НЕ ВЫПОЛНЕНО** |
+| Текущая Windows 11 Pro 26200, отдельная host E2E сборка | **PASS** — 6/6, WinDivert загружен и удалён, исходная установка не изменилась; 19 октября 2026, МСК |
 | Ручная часть (подключение, отключение, обновление, откат) | **НЕ ВЫПОЛНЕНО** |
 
-Это явный блокер стабильного выпуска: запускать привилегированные сценарии на
-рабочей машине владельца репозитория недопустимо, а виртуальная машина с
-установленной Windows в данном окружении отсутствует.
+Чистые клиентские VM и ручная проверка драйвера остаются блокерами стабильного
+выпуска. На хосте включён Hyper-V и есть `Default Switch`; VM отсутствуют.
+ISO не найдены в проверенных корневом каталоге F:, F:\Projects и Downloads.
+Для продолжения нужны пути к ISO Windows 10 x64 и Windows 11 x64, затем выбор
+редакции и завершение установки Windows в каждом госте. Изолированный
+регрессионный тест не заменяет эту матрицу.
+
+## Уточнения после ревью 18 октября 2026 (МСК)
+
+Оснастка вызывает CHEBURNET.exe --verify-install. Эта команда не входит в
+App::Run, не проверяет обновления и не запускает winws. Проверка завершается
+кодом 0 и маркером CHEBURNET_INSTALL_VERIFIED; тайм-аут, ошибка и новый процесс
+winws никогда не засчитываются как успех. Исправлены пути user/config.json и
+active-runtime.json в корне.
+
+-Scenario all выбирает сценарии роли текущего токена. В повышенной сессии это
+пять сценариев установки/восстановления; в обычной — refuses-unelevated.
+Для сертификации нужны **оба** отчёта на каждой ОС. Отчёт указывает token_role
+и required_scenarios. Любой пропущенный явно выбранный сценарий и отсутствие
+пройденных сценариев дают ненулевой код завершения. Самопроверка -SelfTest
+проверяет логику оснастки и не заменяет запуск в VM.
+
+Регрессионные тесты запускают безвредный probe вместо движка. Проверка
+review_elevated использует только отдельный временный корень, возвращает
+CTest SKIP (77) без повышенного токена, а с ним проверяет настоящую распаковку,
+экспорт, отказ при лишней DLL и остановку безвредного дочернего процесса.

@@ -7,6 +7,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/Version.cmake")
 
 project(CHEBURNET VERSION "${CHEBURNET_VERSION_PE}" LANGUAGES CXX)
 
+# Separate build only: a fixed namespace for destructive host E2E fixtures.
+# Never a runtime CLI/config/environment override of the production root.
+set(CHEBURNET_E2E_INSTANCE "" CACHE STRING "Isolated host E2E instance (16 lowercase hex digits)")
+if(NOT CHEBURNET_E2E_INSTANCE STREQUAL "")
+    string(LENGTH "${CHEBURNET_E2E_INSTANCE}" _e2e_length)
+    if(NOT _e2e_length EQUAL 16 OR NOT CHEBURNET_E2E_INSTANCE MATCHES "^[0-9a-f]+$")
+        message(FATAL_ERROR "CHEBURNET_E2E_INSTANCE must contain exactly 16 lowercase hex digits")
+    endif()
+endif()
+
 message(STATUS "CHEBURNET: версия ${CHEBURNET_VERSION_SEMANTIC} "
                "(PE ${CHEBURNET_VERSION_PE}, канал ${CHEBURNET_RELEASE_CHANNEL})")
 
@@ -155,7 +165,10 @@ target_include_directories(cheburnet_lib PUBLIC
     "${GEN_DIR}")
 target_compile_definitions(cheburnet_lib PUBLIC
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(cheburnet_lib PUBLIC bcrypt crypt32 winhttp advapi32 shell32 ole32 user32 wintrust)
+if(NOT CHEBURNET_E2E_INSTANCE STREQUAL "")
+    target_compile_definitions(cheburnet_lib PUBLIC CHEBURNET_E2E_INSTANCE="${CHEBURNET_E2E_INSTANCE}")
+endif()
+target_link_libraries(cheburnet_lib PUBLIC bcrypt crypt32 winhttp advapi32 shell32 ole32 user32 ws2_32 wintrust)
 
 # Warnings / hardening for our own code.
 set(CHEBURNET_WARN /W4 /WX /permissive- /utf-8)
@@ -176,8 +189,9 @@ if(CHEBURNET_ENABLE_ANALYZE)
     # CryptStringToBinaryA в самом wincrypt.h Windows SDK 10.0.26100.0
     # ("синтаксическая ошибка _Param_(1)"). Он относится к чужому заголовку,
     # исправить его на нашей стороне невозможно, и он не указывает ни на какое
-    # свойство кода CHEBURNET. Никакие другие предупреждения анализа не
-    # подавляются: все находки в нашем коде разобраны и исправлены.
+    # свойство кода CHEBURNET. Дополнительно Diagnostics.cpp ограничивает
+    # C6101 только подключением ws2tcpip.h (WSAGetIPUserMtu, SDK 10.0.26100).
+    # Предупреждения анализа собственного кода не подавляются.
     list(APPEND CHEBURNET_WARN /analyze /analyze:external- /wd28285)
     message(STATUS "CHEBURNET: статический анализ MSVC включён")
 endif()
@@ -193,6 +207,9 @@ add_executable(CHEBURNET
     resources/cheburnet.rc
     resources/generated/cheburnet_payload.rc)
 set_target_properties(CHEBURNET PROPERTIES OUTPUT_NAME "CHEBURNET")
+if(NOT CHEBURNET_E2E_INSTANCE STREQUAL "")
+    set_target_properties(CHEBURNET PROPERTIES OUTPUT_NAME "CHEBURNET-E2E")
+endif()
 target_link_libraries(CHEBURNET PRIVATE cheburnet_lib)
 target_compile_options(CHEBURNET PRIVATE ${CHEBURNET_WARN})
 

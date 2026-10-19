@@ -10,7 +10,7 @@
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-00a4ef?style=for-the-badge&logo=windows11&logoColor=white)](#системные-требования)
 [![Лицензия](https://img.shields.io/github/license/Jacksony100/CHEBURNET?style=for-the-badge&label=%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F&color=2ea043)](LICENSE)
 
-[Скачать RC](https://github.com/Jacksony100/CHEBURNET/releases/tag/v1.0.0-rc.3) · [Как запустить](#быстрый-старт) · [Безопасность](SECURITY.md) · [Документация обновлений](docs/UPDATE_SECURITY.md)
+[Скачать RC](https://github.com/Jacksony100/CHEBURNET/releases/tag/v1.0.0-rc.4) · [Как запустить](#быстрый-старт) · [Безопасность](SECURITY.md) · [Документация обновлений](docs/UPDATE_SECURITY.md)
 
 </div>
 
@@ -41,7 +41,7 @@ CHEBURNET упаковывает проверенный движок из
 ## Быстрый старт
 
 1. Скачайте `CHEBURNET.exe` и `CHEBURNET.exe.sha256` только со страницы
-   [официального релиза](https://github.com/Jacksony100/CHEBURNET/releases/tag/v1.0.0-rc.3).
+   [официального релиза](https://github.com/Jacksony100/CHEBURNET/releases/tag/v1.0.0-rc.4).
 2. Проверьте файл в PowerShell:
 
    ```powershell
@@ -123,8 +123,8 @@ scripts\run-tests.ps1 -BuildDir build
 scripts\package.ps1 -BuildDir build -OutDir dist -SkipBuild
 ```
 
-Публичный RC проходит чистую сборку с `/W4 /WX`, **33 CTest-теста** и
-**84 проверки точности** стратегии/режима. Сценарий ручной проверки описан в
+Публичный RC проходит чистую сборку с `/W4 /WX`, **55 CTest-проверок** (одна требует повышенного токена) и
+**88 проверок точности** стратегии/режима. Сценарий ручной проверки описан в
 [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md), модель доверия — в
 [docs/UPDATE_SECURITY.md](docs/UPDATE_SECURITY.md).
 

@@ -268,6 +268,7 @@ ConnectResult App::ScreenConnect() {
     ConnectResult result;
     std::atomic<bool> done{false};
     const bool alreadyConnected = pm_->IsConnectedByUs();
+    operationState_.ObserveProcess(alreadyConnected);
     if (alreadyConnected) {
         operationState_.Complete(AppOperationState::Connected);
     } else if (!operationState_.TryTransition(AppOperationState::Disconnected,
@@ -729,11 +730,12 @@ void App::ScreenMainMenu() {
                         break;
                     }
                     ResourceExtractor extractor(paths_);
-                    const int removed = extractor.CleanupOldVersions();
+                    const CleanupResult cleanup = extractor.CleanupOldVersions();
                     operationState_.Complete(prior);
                     ShowMessage(L"ОБСЛУЖИВАНИЕ",
-                                L"Удалено старых версий: " + std::to_wstring(removed) + L".",
-                                UiColor::Primary);
+                                cleanup.ok ? L"Удалено старых версий: " +
+                                    std::to_wstring(cleanup.removed) + L"." : cleanup.error,
+                                cleanup.ok ? UiColor::Primary : UiColor::Error);
                 }
                 break;
             }
@@ -1238,17 +1240,36 @@ void App::ScreenUpdates() {
                     UiColor::Error);
         return;
     }
-    ShowMessage(L"ПРОВЕРКА ОБНОВЛЕНИЙ",
-                L"[СЕТЬ] HTTPS / системный прокси\n[ПОДПИСЬ] Отдельная подпись ECDSA P-256\n"
-                L"Проверка выполняется. Сетевой сбой не мешает рабочей среде.",
-                UiColor::Primary);
     // Фоновая проверка останавливается и присоединяется до явной проверки,
     // чтобы два запроса не конкурировали за один кэш проверенного манифеста и
     // чтобы пользователь видел результат именно своего действия.
     if (updateCheck_) updateCheck_->Cancel();
     update::UpdateManager manager(paths_);
-    const update::CheckResult check = manager.CheckNow(
-        config_.update.mode != UpdateMode::Disabled);
+    update::UpdateCheckService manual([&](std::atomic<bool>& cancel) {
+        return manager.CheckNow(config_.update.mode != UpdateMode::Disabled, &cancel);
+    });
+    if (!manual.Start()) {
+        operationState_.Complete(prior);
+        return;
+    }
+    update::CheckResult check;
+    while (!manual.TryTakeResult(check)) {
+        BeginFrame();
+        if (EnsureUsableSize()) {
+            DrawHeader(L"// обновления");
+            ui_->FB().PutText(4, 5, L"Проверка обновлений...",
+                              ui_->Attr(UiColor::Primary));
+            DrawFooter(L"Esc — отменить");
+        }
+        ui_->Present();
+        if (ui_->In().Poll(60).key == ui::Key::Esc) {
+            manual.Cancel();
+            operationState_.Complete(pm_->IsConnectedByUs() ? AppOperationState::Connected
+                                                           : AppOperationState::Disconnected);
+            return;
+        }
+    }
+    updateNotice_.clear();
     std::wstring details = check.message + L"\n\n";
     details += L"CHEBURNET: " CHEBURNET_VERSION_WSTR;
         details += L"\nДвижок: " + paths_.RuntimeVersion();

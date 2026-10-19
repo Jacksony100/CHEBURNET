@@ -12,6 +12,7 @@
 #include "../util/Version.h"
 #include "../util/Win32Error.h"
 #include "IntegrityVerifier.h"
+#include "ProcessManager.h"
 #include "SecureFs.h"
 #include "GeneratedManifest.h"
 #include "GeneratedProvenance.h"
@@ -165,6 +166,75 @@ bool ValidateInstalledProvenance(const std::wstring& path,
 
 } // namespace
 
+bool ValidateRuntimeInventory(const std::wstring& root,
+                              const std::vector<std::wstring>& allowed,
+                              std::wstring& unexpected) {
+    std::set<std::wstring> files;
+    std::set<std::wstring> directories;
+    for (const auto& path : allowed) {
+        std::wstring folded = str::ToLowerAsciiW(path);
+        files.insert(folded);
+        for (auto slash = folded.find(L'\\'); slash != std::wstring::npos;
+             slash = folded.find(L'\\', slash + 1))
+            directories.insert(folded.substr(0, slash));
+    }
+    // Iterative and bounded, including directory count; a hostile tree cannot
+    // force unbounded recursion or allocation.
+    std::vector<std::wstring> todo{L""};
+    std::size_t visited = 0;
+    while (!todo.empty()) {
+        const std::wstring relative = std::move(todo.back());
+        todo.pop_back();
+        const std::wstring directory = relative.empty() ? root : root + L"\\" + relative;
+        if (!securefs::ValidateObject(directory, securefs::ObjectKind::Directory, false).ok) {
+            unexpected = directory; return false;
+        }
+        WIN32_FIND_DATAW data{};
+        HANDLE find = ::FindFirstFileW((directory + L"\\*").c_str(), &data);
+        if (find == INVALID_HANDLE_VALUE) {
+            if (::GetLastError() == ERROR_FILE_NOT_FOUND) continue;
+            unexpected = directory; return false;
+        }
+        bool ok = true;
+        do {
+            const std::wstring name = data.cFileName;
+            if (name == L"." || name == L"..") continue;
+            const std::wstring child = relative.empty() ? name : relative + L"\\" + name;
+            const auto folded = str::ToLowerAsciiW(child);
+            const bool isDirectory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            if (++visited > 1024 || (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+                (isDirectory ? !directories.contains(folded) : !files.contains(folded)) ||
+                !securefs::ValidateObject(root + L"\\" + child,
+                     isDirectory ? securefs::ObjectKind::Directory : securefs::ObjectKind::File,
+                     !isDirectory).ok) {
+                unexpected = child; ok = false; break;
+            }
+            if (isDirectory) todo.push_back(child);
+        } while (::FindNextFileW(find, &data));
+        const DWORD error = ok ? ::GetLastError() : ERROR_INVALID_DATA;
+        ::FindClose(find);
+        if (!ok || error != ERROR_NO_MORE_FILES) {
+            if (unexpected.empty()) unexpected = directory;
+            return false;
+        }
+    }
+    return true;
+}
+
+namespace {
+std::vector<std::wstring> EmbeddedInventory() {
+    std::vector<std::wstring> paths;
+    for (int i = 0; i < kEmbeddedResourceCount; ++i)
+        paths.emplace_back(kEmbeddedResources[i].relPath);
+    paths.emplace_back(L"strategies\\catalog.json");
+    // A version installed by an older launcher may now be embedded. These
+    // data-only metadata files never participate in DLL lookup.
+    paths.emplace_back(L"runtime-manifest.json");
+    paths.emplace_back(L"provenance.json");
+    return paths;
+}
+} // namespace
+
 ExtractionResult ResourceExtractor::EnsureExtracted() {
     ExtractionResult result;
 
@@ -173,12 +243,18 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
         return VerifyInstalledRuntime(unused);
     }
 
-    if (!securefs::EnsureProtectedDirectory(paths_.RuntimeVersionDir()).ok ||
-        !securefs::EnsureProtectedDirectory(paths_.BinDir()).ok ||
-        !securefs::EnsureProtectedDirectory(paths_.ListsDir()).ok ||
+    if (!securefs::EnsureTrustedDirectory(paths_.RuntimeVersionDir()).ok ||
+        !securefs::EnsureTrustedDirectory(paths_.BinDir()).ok ||
+        !securefs::EnsureTrustedDirectory(paths_.ListsDir()).ok ||
         !securefs::EnsureProtectedDirectory(paths_.UserDir() + L"\\lists").ok) {
         result.error = L"Не удалось создать рабочую директорию: " + paths_.RuntimeVersionDir() +
                        L"\nПричина: " + win32::FormatLastError();
+        return result;
+    }
+
+    if (!ValidateRuntimeInventory(paths_.RuntimeVersionDir(), EmbeddedInventory(),
+                                  result.failedResource)) {
+        result.error = L"В рабочей среде найден посторонний объект: " + result.failedResource;
         return result;
     }
 
@@ -265,7 +341,7 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
     }
 
     const std::wstring strategyDir = paths_.RuntimeVersionDir() + L"\\strategies";
-    if (!securefs::EnsureProtectedDirectory(strategyDir).ok) {
+    if (!securefs::EnsureTrustedDirectory(strategyDir).ok) {
         result.error = L"Не удалось защитить каталог стратегий.";
         return result;
     }
@@ -293,13 +369,14 @@ ExtractionResult ResourceExtractor::EnsureExtracted() {
 }
 
 ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
-    std::vector<RuntimeStrategy>& catalog) const {
+    std::vector<RuntimeStrategy>& catalog, std::vector<RuntimeFile>* filesOut) const {
+    catalog.clear();
+    if (filesOut) filesOut->clear();
     ExtractionResult result;
     for (const std::wstring& directory : {
              paths_.RuntimeVersionDir(), paths_.BinDir(), paths_.ListsDir(),
              paths_.RuntimeVersionDir() + L"\\strategies"}) {
-        if (!securefs::HardenObject(directory, securefs::ObjectKind::Directory).ok ||
-            !securefs::ValidateProtectedObject(
+        if (!securefs::ValidateProtectedObject(
                 directory, securefs::ObjectKind::Directory, false).ok) {
             result.error = L"ACL каталога установленной рабочей среды не прошёл проверку.";
             return result;
@@ -327,6 +404,7 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         result.error = L"Манифест установленной рабочей среды имеет неверную схему или версию.";
         return result;
     }
+    std::vector<RuntimeFile> verifiedFiles;
     bool winws = false;
     bool strategyCatalog = false;
     bool provenance = false;
@@ -350,15 +428,22 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         }
         const std::wstring full = paths_.RuntimeVersionDir() + L"\\" + normalized;
         if (!FileIsValid(full, *size, sha->c_str()) ||
-            !securefs::HardenObject(full, securefs::ObjectKind::File).ok) {
+            !securefs::ValidateProtectedObject(full, securefs::ObjectKind::File, true).ok) {
             result.failedResource = normalized;
             result.error = L"Проверка целостности установленной рабочей среды не пройдена: " + normalized;
             return result;
         }
+        verifiedFiles.push_back({normalized, *size, *sha});
         winws = winws || folded == L"bin\\winws.exe";
         strategyCatalog = strategyCatalog || folded == L"strategies\\catalog.json";
         provenance = provenance || folded == L"provenance.json";
         ++result.present;
+    }
+    std::vector<std::wstring> inventory{L"runtime-manifest.json"};
+    for (const auto& file : verifiedFiles) inventory.push_back(file.path);
+    if (!ValidateRuntimeInventory(paths_.RuntimeVersionDir(), inventory, result.failedResource)) {
+        result.error = L"В установленной среде найден посторонний объект: " + result.failedResource;
+        return result;
     }
     if (!winws || !strategyCatalog || !provenance ||
         !ValidateInstalledProvenance(paths_.RuntimeVersionDir() + L"\\provenance.json",
@@ -367,6 +452,55 @@ ExtractionResult ResourceExtractor::VerifyInstalledRuntime(
         if (result.error.empty()) result.error = L"Рабочая среда не содержит обязательных компонентов.";
         return result;
     }
+    if (filesOut) *filesOut = std::move(verifiedFiles);
+    result.ok = true;
+    return result;
+}
+
+ExtractionResult ResourceExtractor::VerifyRuntime(std::vector<RuntimeStrategy>& catalog,
+                                                   std::vector<RuntimeFile>* files) const {
+    if (paths_.RuntimeVersion() != upstream::kVersion)
+        return VerifyInstalledRuntime(catalog, files);
+    ExtractionResult result;
+    catalog.clear();
+    if (files) files->clear();
+    if (!ValidateRuntimeInventory(paths_.RuntimeVersionDir(), EmbeddedInventory(),
+                                  result.failedResource)) {
+        result.error = L"Во встроенной среде найден посторонний объект: " + result.failedResource;
+        return result;
+    }
+    for (const auto& directory : {paths_.RuntimeVersionDir(), paths_.BinDir(), paths_.ListsDir(),
+                                  paths_.RuntimeVersionDir() + L"\\strategies"}) {
+        if (!securefs::ValidateProtectedObject(directory, securefs::ObjectKind::Directory, false).ok) {
+            result.error = L"Нарушена защита каталога встроенной среды: " + directory;
+            return result;
+        }
+    }
+    std::vector<RuntimeFile> verified;
+    for (int i = 0; i < kEmbeddedResourceCount; ++i) {
+        const auto& resource = kEmbeddedResources[i];
+        const auto full = paths_.RuntimeVersionDir() + L"\\" + resource.relPath;
+        if (!FileIsValid(full, resource.expectedSize, resource.sha256) ||
+            !securefs::ValidateProtectedObject(full, securefs::ObjectKind::File, true).ok) {
+            result.failedResource = resource.relPath;
+            result.error = L"Нарушена целостность встроенной среды: " + result.failedResource;
+            return result;
+        }
+        verified.push_back({resource.relPath, resource.expectedSize, resource.sha256});
+        ++result.present;
+    }
+    const auto catalogHash = IntegrityVerifier::Sha256Hex(
+        kGeneratedStrategyCatalogJson, std::char_traits<char>::length(kGeneratedStrategyCatalogJson));
+    if (!catalogHash ||
+        !securefs::ValidateProtectedObject(paths_.StrategyCatalogPath(),
+                                           securefs::ObjectKind::File, true).ok ||
+        !FileIsValid(paths_.StrategyCatalogPath(),
+             std::char_traits<char>::length(kGeneratedStrategyCatalogJson), catalogHash->c_str()) ||
+        !strategies::LoadCatalogFile(paths_.StrategyCatalogPath(), catalog, result.error)) {
+        if (result.error.empty()) result.error = L"Нарушена целостность встроенного каталога стратегий";
+        return result;
+    }
+    if (files) *files = std::move(verified);
     result.ok = true;
     return result;
 }
@@ -378,6 +512,8 @@ bool ResourceExtractor::VerifyBinaries(std::wstring& firstBad) const {
         firstBad = verified.failedResource;
         return verified.ok;
     }
+    if (!ValidateRuntimeInventory(paths_.RuntimeVersionDir(), EmbeddedInventory(), firstBad))
+        return false;
     for (int i = 0; i < kEmbeddedResourceCount; ++i) {
         const EmbeddedResource& r = kEmbeddedResources[i];
         if (r.category != ResourceCategory::Binary) continue;
@@ -392,10 +528,9 @@ bool ResourceExtractor::VerifyBinaries(std::wstring& firstBad) const {
     return true;
 }
 
-bool ResourceExtractor::HardenRuntimeDirs() {
-    // Every directory an attacker could pre-create must have its owner reset and
-    // a protected DACL applied - setting owner on a parent does NOT change a
-    // child's owner, so each level is hardened explicitly.
+bool ResourceExtractor::VerifyRuntimeDirs() {
+    // Existing runtime directories must already be trusted. Never turn
+    // an attacker-owned tree into a trusted tree by only replacing its ACL.
     struct Dir { std::wstring path; bool critical; };
     const Dir dirs[] = {
         {paths_.ProgramDataRoot(), true},
@@ -410,7 +545,7 @@ bool ResourceExtractor::HardenRuntimeDirs() {
     bool allCriticalOk = true;
     for (const Dir& d : dirs) {
         if (!RuntimePaths::Exists(d.path)) continue;
-        if (!securefs::HardenObject(d.path, securefs::ObjectKind::Directory).ok) {
+        if (!securefs::ValidateProtectedObject(d.path, securefs::ObjectKind::Directory, false).ok) {
             if (d.critical) allCriticalOk = false;
         }
     }
@@ -422,30 +557,61 @@ bool ResourceExtractor::HardenRuntimeDirs() {
     return allCriticalOk;
 }
 
-int ResourceExtractor::CleanupOldVersions() {
-    int removed = 0;
-    const std::wstring pattern = paths_.RuntimeRoot() + L"\\*";
-    WIN32_FIND_DATAW fd;
-    HANDLE h = ::FindFirstFileW(pattern.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return 0;
+bool BuildRuntimeKeepSet(const update::StateResult& state, std::wstring_view active,
+                         std::wstring_view embedded, std::wstring_view runningVersion,
+                         std::vector<std::wstring>& keep) {
+    keep.clear();
+    if (!state.ok || state.state.current.empty() || active.empty() || embedded.empty()) return false;
+    const auto current = str::ToUtf16(state.state.current);
+    for (const auto version : {active, embedded, runningVersion,
+             std::wstring_view(current)}) {
+        if (!version.empty()) keep.emplace_back(version);
+    }
+    for (const auto& version : {state.state.previousKnownGood, state.state.pending})
+        if (!version.empty()) keep.push_back(str::ToUtf16(version));
+    return true;
+}
+
+CleanupResult ResourceExtractor::CleanupOldVersions() {
+    CleanupResult result;
+    const update::StateResult state = update::LoadRuntimeState(paths_.ActiveRuntimePath());
+    const auto record = ProcessManager::LoadRecord(paths_.ProgramDataRoot() + L"\\winws-run.txt");
+    std::wstring runningVersion;
+    if (record.valid() && ProcessManager::IdentityMatches(record)) {
+        if (!ProcessManager::IsExpectedWinwsImage(record.imagePath, paths_.RuntimeRoot())) {
+            result.error = L"Неизвестная работающая среда; очистка отклонена"; return result;
+        }
+        const auto relative = record.imagePath.substr(paths_.RuntimeRoot().size() + 1);
+        runningVersion = relative.substr(0, relative.find(L'\\'));
+    }
+    std::vector<std::wstring> keep;
+    if (!BuildRuntimeKeepSet(state, paths_.RuntimeVersion(), upstream::kVersion, runningVersion, keep)) {
+        result.error = L"Не удалось прочитать доверенное состояние; очистка отклонена"; return result;
+    }
+    if (!securefs::ValidateProtectedObject(paths_.RuntimeRoot(),
+             securefs::ObjectKind::Directory, false).ok) {
+        result.error = L"Нарушена защита корня среды; очистка отклонена"; return result;
+    }
+    WIN32_FIND_DATAW fd{};
+    HANDLE find = ::FindFirstFileW((paths_.RuntimeRoot() + L"\\*").c_str(), &fd);
+    if (find == INVALID_HANDLE_VALUE) { result.error = L"Не удалось перечислить версии рабочей среды"; return result; }
+    bool ok = true;
     do {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
         const std::wstring name = fd.cFileName;
         if (name == L"." || name == L"..") continue;
-        bool preserve = name == upstream::kVersion;
-        const update::StateResult state = update::LoadRuntimeState(paths_.ActiveRuntimePath());
-        if (state.ok) {
-            preserve = preserve || name == str::ToUtf16(state.state.current) ||
-                       name == str::ToUtf16(state.state.previousKnownGood) ||
-                       name == str::ToUtf16(state.state.pending);
-        }
-        if (preserve) continue;
-        const std::wstring full = paths_.RuntimeRoot() + L"\\" + name;
-        Logger::Info(L"удаляется старая версия рабочей среды: " + name);
-        if (securefs::RemoveTreeUnder(paths_.RuntimeRoot(), full).ok) ++removed;
-    } while (::FindNextFileW(h, &fd));
-    ::FindClose(h);
-    return removed;
+        if (std::any_of(keep.begin(), keep.end(), [&](const auto& version) {
+                return str::IEqualsAscii(name, version); })) continue;
+        const auto removed = securefs::RemoveTreeUnder(paths_.RuntimeRoot(),
+                                                       paths_.RuntimeRoot() + L"\\" + name);
+        if (!removed.ok) { result.error = removed.detail; ok = false; break; }
+        ++result.removed;
+    } while (::FindNextFileW(find, &fd));
+    const DWORD error = ok ? ::GetLastError() : ERROR_INVALID_DATA;
+    ::FindClose(find);
+    result.ok = ok && error == ERROR_NO_MORE_FILES;
+    if (!result.ok && result.error.empty()) result.error = L"Ошибка перечисления версий рабочей среды";
+    return result;
 }
 
 } // namespace cheburnet

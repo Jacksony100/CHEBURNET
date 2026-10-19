@@ -83,8 +83,7 @@ jobs:
           }
           "validation=$validation" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "detail=$detail" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          git diff --stat -- resources | Out-File -FilePath upstream\payload-diff.txt -Encoding utf8
-          git status --porcelain -- resources | Out-File -FilePath upstream\payload-status.txt -Encoding utf8
+          scripts\write-upstream-diff.ps1 -Root $PWD -OutDir upstream
           scripts\upstream-report.ps1 -ImportedRoot $PWD -Validation $validation `
             -ValidationDetail $detail `
             -RunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' `
@@ -103,6 +102,11 @@ jobs:
       issues: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: upstream-detect
+          path: upstream
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
         with:
           name: upstream-candidate
           path: upstream
